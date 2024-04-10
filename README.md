@@ -18,3 +18,12 @@ java DateServer.java
 netstat -an | grep 59090
 nc localhost 59090
 ```
+
+## DateClient.java
+
+- On the client side, the Socket constructor takes the IP address and port on the server. If the connect request is accepted, we get a socket object to communicate.
+- Our application is so simple that the client never writes to the server, it only reads. Because we are communicating with text, the simplest thing to do is to wrap the socket’s input stream in a Scanner. These are powerful and convenient. In our case we read a line of text from the server with Scanner.nextLine.
+
+```bash
+java DateClient.java localhost
+```
