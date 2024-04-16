@@ -1,5 +1,10 @@
+/**
+ * Luana e Roberto
+ */
+
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.Dimension;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.Socket;
@@ -9,23 +14,13 @@ import java.awt.BorderLayout;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
+import javax.swing.JTextPane;
 import javax.swing.JTextField;
 
-/**
- * A simple Swing-based client for the chat server. Graphically it is a frame
- * with a text field for entering messages and a textarea to see the whole
- * dialog.
- *
- * The client follows the following Chat Protocol. When the server sends
- * "SUBMITNAME" the client replies with the desired screen name. The server will
- * keep sending "SUBMITNAME" requests as long as the client submits screen names
- * that are already in use. When the server sends a line beginning with
- * "NAMEACCEPTED" the client is now allowed to start sending the server
- * arbitrary strings to be broadcast to all chatters connected to the server.
- * When the server sends a line beginning with "MESSAGE" then all characters
- * following this string should be displayed in its message area.
- */
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
+
 public class ChatClient {
 
     String serverAddress;
@@ -33,25 +28,18 @@ public class ChatClient {
     PrintWriter out;
     JFrame frame = new JFrame("Chatter");
     JTextField textField = new JTextField(50);
-    JTextArea messageArea = new JTextArea(16, 50);
+    JTextPane messageArea = new JTextPane();
 
-    /**
-     * Constructs the client by laying out the GUI and registering a listener with
-     * the textfield so that pressing Return in the listener sends the textfield
-     * contents to the server. Note however that the textfield is initially NOT
-     * editable, and only becomes editable AFTER the client receives the
-     * NAMEACCEPTED message from the server.
-     */
     public ChatClient(String serverAddress) {
         this.serverAddress = serverAddress;
 
         textField.setEditable(false);
         messageArea.setEditable(false);
+        messageArea.setPreferredSize(new Dimension(200, 400));
         frame.getContentPane().add(textField, BorderLayout.SOUTH);
         frame.getContentPane().add(new JScrollPane(messageArea), BorderLayout.CENTER);
         frame.pack();
 
-        // Send on enter then clear to prepare for next message
         textField.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 out.println(textField.getText());
@@ -79,7 +67,9 @@ public class ChatClient {
                     this.frame.setTitle("Chatter - " + line.substring(13));
                     textField.setEditable(true);
                 } else if (line.startsWith("MESSAGE")) {
-                    messageArea.append(line.substring(8) + "\n");
+                    appendMessage(messageArea, line.substring(8), false);
+                } else if (line.startsWith("SMESSAGE")) {
+                    appendMessage(messageArea, line.substring(9), true);
                 }
             }
         } finally {
@@ -87,6 +77,20 @@ public class ChatClient {
             frame.dispose();
         }
     }
+
+    private void appendMessage(JTextPane textArea, String message, boolean special) {
+        StyledDocument doc = textArea.getStyledDocument();
+        SimpleAttributeSet set = new SimpleAttributeSet();
+        if (special) {
+            StyleConstants.setForeground(set, java.awt.Color.BLUE);
+            StyleConstants.setItalic(set, true);
+        }
+        try {
+            doc.insertString(doc.getLength(), message + "\n", set);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }    
 
     public static void main(String[] args) throws Exception {
         if (args.length != 1) {
