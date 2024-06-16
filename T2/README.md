@@ -29,3 +29,4 @@ pkill rmiregistry
 - Should we throw Remote Exception or should we handle it in a try-catch?
 - Should we first register the rmi via command-line or should it be done through coding?
 - How is only the server going to be responsible for closing the rooms when it does not have any method for that in the provided interface?
+- What would happen if I created a room named "Servidor"? 
