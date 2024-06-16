@@ -13,24 +13,24 @@ public class ServerChat implements IServerChat {
 
     @Override
     public ArrayList<String> getRooms() {
-//        TODO
-        return null;
+        return roomList;
     }
 
     @Override
-    public void createRoom(String roomName) {
-//        TODO
-    }
+    public void createRoom(String roomName) throws RemoteException {
+        if (!roomList.contains(roomName)) {
+            RoomChat room = new RoomChat(roomName);
 
-    @Override
-    public String sayHello() throws RemoteException {
-        return "Hello";
+            LocateRegistry.getRegistry().rebind(roomName, room);
+
+            roomList.add(roomName);
+        }
     }
 
     public static void main(String[] args) {
         try {
-            ServerChat obj = new ServerChat();
-            IServerChat stub = (IServerChat) UnicastRemoteObject.exportObject(obj, 0);
+            ServerChat server = new ServerChat();
+            IServerChat stub = (IServerChat) UnicastRemoteObject.exportObject(server, 0);
 
             LocateRegistry.getRegistry("127.0.0.1", 2020).bind("Servidor", stub);
 

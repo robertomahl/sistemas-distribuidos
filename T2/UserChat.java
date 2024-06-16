@@ -1,3 +1,4 @@
+import java.rmi.registry.LocateRegistry;
 import javax.swing.*;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
@@ -11,6 +12,9 @@ import java.net.Socket;
 import java.util.Scanner;
 
 public class UserChat implements IUserChat {
+
+    private IServerChat serverStub;
+    private IRoomChat roomStub;
 
 //    String serverAddress;
 //    Scanner in;
@@ -35,6 +39,13 @@ public class UserChat implements IUserChat {
 //                textField.setText("");
 //            }
 //        });
+        try {
+            serverStub = (IServerChat) LocateRegistry.getRegistry("127.0.0.1", 2020).lookup("Servidor");
+//            roomStub =
+        } catch (Exception e) {
+            System.err.println("Room exception: " + e.toString());
+            e.printStackTrace();
+        }
     }
 
     private String getName() {

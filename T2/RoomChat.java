@@ -1,51 +1,48 @@
+import java.rmi.Remote;
+import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
-import java.rmi.registry.Registry;
 import java.util.Map;
 import java.util.HashMap;
 
 public class RoomChat implements IRoomChat {
 
     private Map<String, IUserChat> userList;
+    private String roomName;
 
-    public RoomChat() {
+    public RoomChat(String roomName) {
+
+        this.roomName = roomName;
         this.userList = new HashMap<>();
     }
 
     @Override
-    public void sendMsg(String usrName, String msg) {
-//        TODO
+    public void sendMsg(String usrName, String msg) throws RemoteException {
+        for (IUserChat u : userList.values()) {
+            u.deliverMsg(usrName, msg);
+        }
     }
 
     @Override
     public void joinRoom(String usrName, IUserChat user) {
-//        TODO
+        userList.put(usrName, user);
+//        TODO: enviar mensagem
     }
 
     @Override
     public void leaveRoom(String usrName) {
-//        TODO
+        userList.remove(usrName);
+//        TODO: enviar mensagem
     }
 
     @Override
     public void closeRoom() {
-//        TODO
+//        TODO: enviar mensagem
+        userList.clear();
     }
 
     @Override
     public String getRoomName() {
-//        TODO
-        return "";
-    }
-
-    public static void main(String[] args) {
-        try {
-            IServerChat stub = (IServerChat) LocateRegistry.getRegistry("127.0.0.1", 2020).lookup("Servidor");
-            String response = stub.sayHello();
-            System.out.println("response: " + response);
-        } catch (Exception e) {
-            System.err.println("Room exception: " + e.toString());
-            e.printStackTrace();
-        }
+        return this.roomName;
     }
 
 }

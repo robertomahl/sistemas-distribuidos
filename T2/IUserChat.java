@@ -1,5 +1,8 @@
-public interface IUserChat extends java.rmi.Remote {
+import java.rmi.Remote;
+import java.rmi.RemoteException;
 
-    public void deliverMsg(String senderName, String msg) throws java.rmi.RemoteException;
+public interface IUserChat extends Remote {
+
+    public void deliverMsg(String senderName, String msg) throws RemoteException;
 
 }
