@@ -1,10 +1,9 @@
-import java.rmi.Remote;
+import java.io.Serializable;
 import java.rmi.RemoteException;
-import java.rmi.registry.LocateRegistry;
-import java.util.Map;
 import java.util.HashMap;
+import java.util.Map;
 
-public class RoomChat implements IRoomChat {
+public class RoomChat implements IRoomChat, Serializable {
 
     private Map<String, IUserChat> userList;
     private String roomName;
