@@ -1,111 +1,176 @@
 import java.rmi.registry.LocateRegistry;
+import java.rmi.registry.Registry;
+import java.rmi.RemoteException;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import javax.swing.*;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
-import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.net.Socket;
-import java.util.Scanner;
+import java.util.List;
 
-public class UserChat implements IUserChat {
+public class UserChat extends JFrame implements IUserChat {
 
     private IServerChat serverStub;
-    private IRoomChat roomStub;
+    private IRoomChat currentRoomStub;
+    private String userName;
+    private JTextPane messageArea;
+    private JTextField textField;
+    private JPanel roomListPanel;
 
-//    String serverAddress;
-//    Scanner in;
-//    PrintWriter out;
-//    JFrame frame = new JFrame("Chatter");
-//    JTextField textField = new JTextField(50);
-//    JTextPane messageArea = new JTextPane();
+    public UserChat(String userName) {
+        this.userName = userName;
+        initializeGUI();
 
-    public UserChat(String serverAddress) {
-//        this.serverAddress = serverAddress;
-//
-//        textField.setEditable(false);
-//        messageArea.setEditable(false);
-//        messageArea.setPreferredSize(new Dimension(200, 400));
-//        frame.getContentPane().add(textField, BorderLayout.SOUTH);
-//        frame.getContentPane().add(new JScrollPane(messageArea), BorderLayout.CENTER);
-//        frame.pack();
-//
-//        textField.addActionListener(new ActionListener() {
-//            public void actionPerformed(ActionEvent e) {
-//                out.println(textField.getText());
-//                textField.setText("");
-//            }
-//        });
         try {
             serverStub = (IServerChat) LocateRegistry.getRegistry("127.0.0.1", 2020).lookup("Servidor");
-//            roomStub =
+            updateRoomList();
+        } catch (Exception e) {
+            System.err.println("UserChat exception: " + e.toString());
+            e.printStackTrace();
+        }
+    }
+
+    private void initializeGUI() {
+        setTitle("User Chat - " + userName);
+        setSize(600, 400);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+        messageArea = new JTextPane();
+        messageArea.setEditable(false);
+        JScrollPane messageScrollPane = new JScrollPane(messageArea);
+
+        textField = new JTextField();
+        textField.setEditable(false);
+        textField.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    if (currentRoomStub != null) {
+                        currentRoomStub.sendMsg(userName, textField.getText());
+                        textField.setText("");
+                    }
+                } catch (RemoteException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        });
+
+        JPanel navbar = new JPanel();
+        navbar.setLayout(new FlowLayout(FlowLayout.LEFT)); // Set layout for buttons
+
+        JButton addRoomButton = new JButton("Add Room");
+        addRoomButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String roomName = JOptionPane.showInputDialog(UserChat.this, "Enter room name:");
+                if (roomName != null && !roomName.isEmpty()) {
+                  System.out.println(roomName);
+                    try {
+                        serverStub.createRoom(roomName);
+                    } catch (RemoteException ex) {
+                        throw new RuntimeException(ex);
+                    }
+                }
+            }
+        });
+        navbar.add(addRoomButton);
+
+        JButton exitButton = new JButton("Exit");
+        exitButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    currentRoomStub.leaveRoom(userName);
+                } catch (RemoteException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+        navbar.add(exitButton);
+
+        roomListPanel = new JPanel();
+        roomListPanel.setLayout(new FlowLayout(FlowLayout.LEFT)); // Set layout for buttons
+
+        JScrollPane roomScrollPane = new JScrollPane(roomListPanel);
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, roomScrollPane, messageScrollPane);
+        splitPane.setDividerLocation(150);
+
+        getContentPane().add(splitPane, BorderLayout.CENTER);
+        getContentPane().add(textField, BorderLayout.SOUTH);
+        getContentPane().add(roomScrollPane, BorderLayout.WEST);
+        getContentPane().add(navbar, BorderLayout.NORTH);
+
+    }
+
+    private void updateRoomList() {
+        try {
+            List<String> rooms = serverStub.getRooms();
+            System.out.println(rooms);
+            roomListPanel.removeAll(); // Clear existing buttons
+
+            for (String roomName : rooms) {
+                JButton roomButton = new JButton(roomName);
+                roomButton.addActionListener(new ActionListener() {
+                    @Override
+                    public void actionPerformed(ActionEvent e) {
+                        joinRoom(roomName);
+                    }
+                });
+                roomListPanel.add(roomButton);
+            }
+
+            roomListPanel.revalidate(); // Refresh the panel layout
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void joinRoom(String roomName) {
+        try {
+            if (currentRoomStub != null) {
+                currentRoomStub.leaveRoom(userName);
+            }
+            currentRoomStub = (IRoomChat) LocateRegistry.getRegistry("127.0.0.1", 2020).lookup(roomName);
+            currentRoomStub.joinRoom(userName, this);
+            textField.setEditable(true);
+            messageArea.setText("");
+            appendMessage("Joined room: " + roomName, true);
         } catch (Exception e) {
             System.err.println("Room exception: " + e.toString());
             e.printStackTrace();
         }
     }
 
-    private String getName() {
-//        return JOptionPane.showInputDialog(frame, "Choose a screen name:", "Screen name selection",
-//                JOptionPane.PLAIN_MESSAGE);
-        return null;
-    }
-
-    private void run() throws IOException {
-//        try {
-//            var socket = new Socket(serverAddress, 59001);
-//            in = new Scanner(socket.getInputStream());
-//            out = new PrintWriter(socket.getOutputStream(), true);
-//
-//            while (in.hasNextLine()) {
-//                var line = in.nextLine();
-//                if (line.startsWith("SUBMITNAME")) {
-//                    out.println(getName());
-//                } else if (line.startsWith("NAMEACCEPTED")) {
-//                    this.frame.setTitle("Chatter - " + line.substring(13));
-//                    textField.setEditable(true);
-//                } else if (line.startsWith("MESSAGE")) {
-//                    appendMessage(messageArea, line.substring(8), false);
-//                } else if (line.startsWith("SMESSAGE")) {
-//                    appendMessage(messageArea, line.substring(9), true);
-//                }
-//            }
-//        } finally {
-//            frame.setVisible(false);
-//            frame.dispose();
-//        }
-    }
-
-    private void appendMessage(JTextPane textArea, String message, boolean special) {
-//        StyledDocument doc = textArea.getStyledDocument();
-//        SimpleAttributeSet set = new SimpleAttributeSet();
-//        if (special) {
-//            StyleConstants.setForeground(set, java.awt.Color.BLUE);
-//            StyleConstants.setItalic(set, true);
-//        }
-//        try {
-//            doc.insertString(doc.getLength(), message + "\n", set);
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
-    }
-
-    public static void main(String[] args) throws Exception {
-//        if (args.length != 1) {
-//            System.err.println("Pass the server IP as the sole command line argument");
-//            return;
-//        }
-//        var client = new UserChat(args[0]);
-//        client.frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-//        client.frame.setVisible(true);
-//        client.run();
+    private void appendMessage(String message, boolean special) {
+        StyledDocument doc = messageArea.getStyledDocument();
+        SimpleAttributeSet set = new SimpleAttributeSet();
+        if (special) {
+            StyleConstants.setForeground(set, Color.BLUE);
+            StyleConstants.setItalic(set, true);
+        }
+        try {
+            doc.insertString(doc.getLength(), message + "\n", set);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
-    public void deliverMsg(String senderName, String msg) {
-//        TODO
+    public void deliverMsg(String senderName, String msg) throws RemoteException {
+        appendMessage(senderName + ": " + msg, false);
+    }
+
+    public static void main(String[] args) {
+        if (args.length != 1) {
+            System.err.println("Usage: java UserChat <username>");
+            return;
+        }
+        String userName = args[0];
+        SwingUtilities.invokeLater(() -> {
+            UserChat client = new UserChat(userName);
+            client.setVisible(true);
+        });
     }
 }
