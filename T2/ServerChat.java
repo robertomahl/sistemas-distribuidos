@@ -27,12 +27,17 @@ public class ServerChat implements IServerChat {
         }
     }
 
+    /*
+    Registry registry = LocateRegistry.getRegistry(); // poderia passar host e port
+    ServerChat server = (ServerChat) registry.lookup("Servidor");
+     */
+
     public static void main(String[] args) {
         try {
             ServerChat server = new ServerChat();
             IServerChat stub = (IServerChat) UnicastRemoteObject.exportObject(server, 0);
 
-            LocateRegistry.getRegistry("127.0.0.1", 2020).bind("Servidor", stub);
+            LocateRegistry.createRegistry(2020).rebind("Servidor", stub);
 
             System.err.println("Server ready");
         } catch (Exception e) {

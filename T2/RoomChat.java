@@ -10,7 +10,6 @@ public class RoomChat implements IRoomChat {
     private String roomName;
 
     public RoomChat(String roomName) {
-
         this.roomName = roomName;
         this.userList = new HashMap<>();
     }
