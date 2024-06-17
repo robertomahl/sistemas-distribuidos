@@ -1,9 +1,11 @@
-import java.rmi.registry.LocateRegistry;
-import java.rmi.server.UnicastRemoteObject;
-import java.rmi.RemoteException;
-import java.awt.*;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.FlowLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -11,7 +13,16 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import javax.swing.*;
+import javax.swing.BoxLayout;
+import javax.swing.JButton;
+import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
+import javax.swing.JTextField;
+import javax.swing.JTextPane;
+import javax.swing.SwingUtilities;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
@@ -58,15 +69,11 @@ public class UserChat extends JFrame implements IUserChat {
         textField.setEditable(true);
         textField.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
-                try {
-                    if (currentRoomStub != null) {
-                        String message = textField.getText();
-                        currentRoomStub.sendMsg(userName, message);
-                        appendMessage(userName, message, false); // Exibe a mensagem localmente
-                        textField.setText("");
-                    }
-                } catch (RemoteException ex) {
-                    ex.printStackTrace();
+                if (currentRoomStub != null) {
+                    String message = textField.getText();
+                    currentRoomStub.sendMsg(userName, message);
+                    appendMessage(userName, message, false); // Exibe a mensagem localmente
+                    textField.setText("");
                 }
             }
         });
@@ -85,12 +92,8 @@ public class UserChat extends JFrame implements IUserChat {
                 String roomName = JOptionPane.showInputDialog(UserChat.this, "Enter room name:");
                 if (roomName != null && !roomName.isEmpty()) {
                     System.out.println(roomName);
-                    try {
-                        serverStub.createRoom(roomName);
-                        updateRoomList();
-                    } catch (RemoteException ex) {
-                        throw new RuntimeException(ex);
-                    }
+                    serverStub.createRoom(roomName);
+                    updateRoomList();
                 }
             }
         });
@@ -135,24 +138,20 @@ public class UserChat extends JFrame implements IUserChat {
     }
 
     private synchronized void updateRoomList() {
-        try {
-            List<String> rooms = serverStub.getRooms();
-            if (!rooms.equals(previousRoomList)) {
-                previousRoomList = new ArrayList<>(rooms);
-                SwingUtilities.invokeLater(() -> {
-                    roomListPanel.removeAll();
-                    for (String roomName : rooms) {
-                        JButton roomButton = new JButton(roomName);
-                        roomButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-                        roomButton.addActionListener(e -> joinRoom(roomName));
-                        roomListPanel.add(roomButton);
-                    }
-                    roomListPanel.revalidate();
-                    roomListPanel.repaint();
-                });
-            }
-        } catch (RemoteException e) {
-            e.printStackTrace();
+        List<String> rooms = serverStub.getRooms();
+        if (!rooms.equals(previousRoomList)) {
+            previousRoomList = new ArrayList<>(rooms);
+            SwingUtilities.invokeLater(() -> {
+                roomListPanel.removeAll();
+                for (String roomName : rooms) {
+                    JButton roomButton = new JButton(roomName);
+                    roomButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+                    roomButton.addActionListener(e -> joinRoom(roomName));
+                    roomListPanel.add(roomButton);
+                }
+                roomListPanel.revalidate();
+                roomListPanel.repaint();
+            });
         }
     }
 
@@ -165,7 +164,7 @@ public class UserChat extends JFrame implements IUserChat {
             currentRoomStub.joinRoom(userName, this); // Junte-se à nova sala
             textField.setEditable(true);
             messageArea.setText("");
-            appendMessage("Joined room: " , roomName, true);
+            appendMessage("Joined room: ", roomName, true);
         } catch (Exception e) {
             System.err.println("Room exception: " + e.toString());
             e.printStackTrace();
@@ -212,7 +211,7 @@ public class UserChat extends JFrame implements IUserChat {
     }
 
     @Override
-    public void deliverMsg(String senderName, String msg) throws RemoteException {
+    public void deliverMsg(String senderName, String msg) {
         // Verifica se a mensagem não vem do próprio usuário
         if (!senderName.equals(userName)) {
             appendMessage(senderName, msg, false);

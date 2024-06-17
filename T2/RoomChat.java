@@ -1,5 +1,4 @@
 import java.io.Serializable;
-import java.rmi.RemoteException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -15,14 +14,8 @@ public class RoomChat implements IRoomChat, Serializable {
 
     @Override
     public void sendMsg(String usrName, String msg) {
-//      TODO: try-catch may be removed after removing throws from method signature
-        try {
-            for (IUserChat u : userList.values()) {
-                u.deliverMsg(usrName, msg);
-            }
-        } catch (Exception e) {
-            System.err.println("Send msg exception: " + e);
-            e.printStackTrace();
+        for (IUserChat u : userList.values()) {
+            u.deliverMsg(usrName, msg);
         }
     }
 
