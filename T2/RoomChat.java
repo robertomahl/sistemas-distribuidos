@@ -14,27 +14,33 @@ public class RoomChat implements IRoomChat, Serializable {
     }
 
     @Override
-    public void sendMsg(String usrName, String msg) throws RemoteException {
-        for (IUserChat u : userList.values()) {
-            u.deliverMsg(usrName, msg);
+    public void sendMsg(String usrName, String msg) {
+//      TODO: try-catch may be removed after removing throws from method signature
+        try {
+            for (IUserChat u : userList.values()) {
+                u.deliverMsg(usrName, msg);
+            }
+        } catch (Exception e) {
+            System.err.println("Send msg exception: " + e);
+            e.printStackTrace();
         }
     }
 
     @Override
     public void joinRoom(String usrName, IUserChat user) {
         userList.put(usrName, user);
-//        TODO: enviar mensagem
+        this.sendMsg("Sistema", usrName + " entrou na sala.");
     }
 
     @Override
     public void leaveRoom(String usrName) {
         userList.remove(usrName);
-//        TODO: enviar mensagem
+        this.sendMsg("Sistema", usrName + " saiu da sala.");
     }
 
     @Override
     public void closeRoom() {
-//        TODO: enviar mensagem
+        this.sendMsg("Sistema", "Sala fechada pelo servidor.");
         userList.clear();
     }
 
