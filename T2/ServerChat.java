@@ -14,37 +14,37 @@ public class ServerChat implements IServerChat, Serializable {
 
     private ArrayList<String> roomList;
 
-    private DefaultListModel<String> listModel;
-    private JList<String> roomJList;
-    private JFrame frame;
+    private DefaultListModel<String> roomListModel;
+    private JList<String> jList;
+    private JFrame jFrame;
 
     public ServerChat() {
         this.roomList = new ArrayList<>();
-        this.listModel = new DefaultListModel<>();
-        this.roomJList = new JList<>(listModel);
-        this.frame = new JFrame("Server");
+        this.roomListModel = new DefaultListModel<>();
+        this.jList = new JList<>(roomListModel);
+        this.jFrame = new JFrame("Server - Clique para fechar a sala");
 
         initGUI();
     }
 
     private void initGUI() {
-        this.frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        this.frame.setSize(400, 300);
-        this.frame.setLayout(new BorderLayout());
+        this.jFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        this.jFrame.setSize(400, 300);
+        this.jFrame.setLayout(new BorderLayout());
 
-        JScrollPane scrollPane = new JScrollPane(roomJList);
-        this.frame.add(scrollPane, BorderLayout.CENTER);
+        JScrollPane scrollPane = new JScrollPane(jList);
+        this.jFrame.add(scrollPane, BorderLayout.CENTER);
 
-        roomJList.addListSelectionListener(e -> {
+        jList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
-                String selectedRoom = roomJList.getSelectedValue();
+                String selectedRoom = jList.getSelectedValue();
                 if (selectedRoom != null) {
                     closeRoom(selectedRoom);
                 }
             }
         });
 
-        this.frame.setVisible(true);
+        this.jFrame.setVisible(true);
     }
 
     @Override
@@ -53,17 +53,22 @@ public class ServerChat implements IServerChat, Serializable {
     }
 
     @Override
-    public void createRoom(String roomName) throws RemoteException {
-        if (!roomList.contains(roomName)) {
-            RoomChat room = new RoomChat(roomName);
+    public void createRoom(String roomName) {
+        try {
+            if (!roomList.contains(roomName)) {
+                RoomChat room = new RoomChat(roomName);
 
-            IRoomChat stub = (IRoomChat) UnicastRemoteObject.exportObject(room, 0);
+                IRoomChat stub = (IRoomChat) UnicastRemoteObject.exportObject(room, 0);
 
-            Registry registry = LocateRegistry.getRegistry("127.0.0.1", 2020);
-            registry.rebind(roomName, stub);
+                Registry registry = LocateRegistry.getRegistry("127.0.0.1", 2020);
+                registry.rebind(roomName, stub);
 
-            roomList.add(roomName);
-            listModel.addElement(roomName);
+                roomList.add(roomName);
+                roomListModel.addElement(roomName);
+            }
+        } catch (RemoteException e) {
+            System.err.println("Create room exception: " + e);
+            e.printStackTrace();
         }
     }
 
@@ -75,7 +80,7 @@ public class ServerChat implements IServerChat, Serializable {
             roomChat.closeRoom();
 
             roomList.remove(roomName);
-            listModel.removeElement(roomName);
+            roomListModel.removeElement(roomName);
         } catch (Exception e) {
             System.err.println("Close room exception: " + e);
             e.printStackTrace();
@@ -89,7 +94,7 @@ public class ServerChat implements IServerChat, Serializable {
             IServerChat stub = (IServerChat) UnicastRemoteObject.exportObject(server, 0);
             LocateRegistry.createRegistry(2020).rebind("Servidor", stub);
         } catch (Exception e) {
-            System.err.println("Server exception: " + e.toString());
+            System.err.println("Server exception: " + e);
             e.printStackTrace();
         }
     }
