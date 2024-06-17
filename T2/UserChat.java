@@ -1,14 +1,20 @@
 import java.rmi.registry.LocateRegistry;
-import java.rmi.registry.Registry;
+import java.rmi.server.UnicastRemoteObject;
 import java.rmi.RemoteException;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import javax.swing.*;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
-import java.util.List;
 
 public class UserChat extends JFrame implements IUserChat {
 
@@ -18,14 +24,21 @@ public class UserChat extends JFrame implements IUserChat {
     private JTextPane messageArea;
     private JTextField textField;
     private JPanel roomListPanel;
+    private List<String> previousRoomList;
+    private ScheduledExecutorService scheduler;
+    private Map<String, Color> userColors; // Mapa para armazenar as cores dos usuários
 
     public UserChat(String userName) {
         this.userName = userName;
+        this.previousRoomList = new ArrayList<>();
+        this.userColors = new HashMap<>();
         initializeGUI();
 
         try {
             serverStub = (IServerChat) LocateRegistry.getRegistry("127.0.0.1", 2020).lookup("Servidor");
+            IUserChat stub = (IUserChat) UnicastRemoteObject.exportObject(this, 0);
             updateRoomList();
+            startRoomListUpdater();
         } catch (Exception e) {
             System.err.println("UserChat exception: " + e.toString());
             e.printStackTrace();
@@ -42,12 +55,14 @@ public class UserChat extends JFrame implements IUserChat {
         JScrollPane messageScrollPane = new JScrollPane(messageArea);
 
         textField = new JTextField();
-        textField.setEditable(false);
+        textField.setEditable(true);
         textField.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 try {
                     if (currentRoomStub != null) {
-                        currentRoomStub.sendMsg(userName, textField.getText());
+                        String message = textField.getText();
+                        currentRoomStub.sendMsg(userName, message);
+                        appendMessage(userName, message, false); // Exibe a mensagem localmente
                         textField.setText("");
                     }
                 } catch (RemoteException ex) {
@@ -56,8 +71,12 @@ public class UserChat extends JFrame implements IUserChat {
             }
         });
 
+        JPanel messagePanel = new JPanel(new BorderLayout());
+        messagePanel.add(messageScrollPane, BorderLayout.CENTER);
+        messagePanel.add(textField, BorderLayout.SOUTH);
+
         JPanel navbar = new JPanel();
-        navbar.setLayout(new FlowLayout(FlowLayout.LEFT)); // Set layout for buttons
+        navbar.setLayout(new FlowLayout(FlowLayout.LEFT));
 
         JButton addRoomButton = new JButton("Add Room");
         addRoomButton.addActionListener(new ActionListener() {
@@ -65,9 +84,10 @@ public class UserChat extends JFrame implements IUserChat {
             public void actionPerformed(ActionEvent e) {
                 String roomName = JOptionPane.showInputDialog(UserChat.this, "Enter room name:");
                 if (roomName != null && !roomName.isEmpty()) {
-                  System.out.println(roomName);
+                    System.out.println(roomName);
                     try {
                         serverStub.createRoom(roomName);
+                        updateRoomList();
                     } catch (RemoteException ex) {
                         throw new RuntimeException(ex);
                     }
@@ -76,52 +96,61 @@ public class UserChat extends JFrame implements IUserChat {
         });
         navbar.add(addRoomButton);
 
-        JButton exitButton = new JButton("Exit");
+        JButton exitButton = new JButton("Leave");
         exitButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                try {
-                    currentRoomStub.leaveRoom(userName);
-                } catch (RemoteException ex) {
-                    throw new RuntimeException(ex);
-                }
+                leaveRoom(); // Ao sair, deixe a sala atual
+                shutdownScheduler();
             }
         });
         navbar.add(exitButton);
 
         roomListPanel = new JPanel();
-        roomListPanel.setLayout(new FlowLayout(FlowLayout.LEFT)); // Set layout for buttons
+        roomListPanel.setLayout(new BoxLayout(roomListPanel, BoxLayout.Y_AXIS));
 
         JScrollPane roomScrollPane = new JScrollPane(roomListPanel);
 
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, roomScrollPane, messageScrollPane);
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, roomScrollPane, messagePanel);
         splitPane.setDividerLocation(150);
 
         getContentPane().add(splitPane, BorderLayout.CENTER);
-        getContentPane().add(textField, BorderLayout.SOUTH);
-        getContentPane().add(roomScrollPane, BorderLayout.WEST);
         getContentPane().add(navbar, BorderLayout.NORTH);
-
     }
 
-    private void updateRoomList() {
+    private void startRoomListUpdater() {
+        scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.scheduleAtFixedRate(new Runnable() {
+            @Override
+            public void run() {
+                updateRoomList();
+            }
+        }, 0, 5, TimeUnit.SECONDS);
+    }
+
+    private void shutdownScheduler() {
+        if (scheduler != null) {
+            scheduler.shutdown();
+        }
+    }
+
+    private synchronized void updateRoomList() {
         try {
             List<String> rooms = serverStub.getRooms();
-            System.out.println(rooms);
-            roomListPanel.removeAll(); // Clear existing buttons
-
-            for (String roomName : rooms) {
-                JButton roomButton = new JButton(roomName);
-                roomButton.addActionListener(new ActionListener() {
-                    @Override
-                    public void actionPerformed(ActionEvent e) {
-                        joinRoom(roomName);
+            if (!rooms.equals(previousRoomList)) {
+                previousRoomList = new ArrayList<>(rooms);
+                SwingUtilities.invokeLater(() -> {
+                    roomListPanel.removeAll();
+                    for (String roomName : rooms) {
+                        JButton roomButton = new JButton(roomName);
+                        roomButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+                        roomButton.addActionListener(e -> joinRoom(roomName));
+                        roomListPanel.add(roomButton);
                     }
+                    roomListPanel.revalidate();
+                    roomListPanel.repaint();
                 });
-                roomListPanel.add(roomButton);
             }
-
-            roomListPanel.revalidate(); // Refresh the panel layout
         } catch (RemoteException e) {
             e.printStackTrace();
         }
@@ -130,36 +159,64 @@ public class UserChat extends JFrame implements IUserChat {
     private void joinRoom(String roomName) {
         try {
             if (currentRoomStub != null) {
-                currentRoomStub.leaveRoom(userName);
+                currentRoomStub.leaveRoom(userName); // Primeiro, deixe a sala atual, se houver
             }
             currentRoomStub = (IRoomChat) LocateRegistry.getRegistry("127.0.0.1", 2020).lookup(roomName);
-            currentRoomStub.joinRoom(userName, this);
+            currentRoomStub.joinRoom(userName, this); // Junte-se à nova sala
             textField.setEditable(true);
             messageArea.setText("");
-            appendMessage("Joined room: " + roomName, true);
+            appendMessage("Joined room: " , roomName, true);
         } catch (Exception e) {
             System.err.println("Room exception: " + e.toString());
             e.printStackTrace();
         }
     }
 
-    private void appendMessage(String message, boolean special) {
+    private void leaveRoom() {
+        try {
+            if (currentRoomStub != null) {
+                currentRoomStub.leaveRoom(userName); // Deixe a sala atual
+                currentRoomStub = null; // Limpe a referência ao stub da sala atual
+                textField.setEditable(false);
+                messageArea.setText("");
+            }
+        } catch (Exception e) {
+            System.err.println("Error leaving room: " + e.toString());
+            e.printStackTrace();
+        }
+    }
+
+    private void appendMessage(String senderName, String message, boolean special) {
         StyledDocument doc = messageArea.getStyledDocument();
         SimpleAttributeSet set = new SimpleAttributeSet();
+
+        Color color = getUserColor(senderName); // Obtém a cor do usuário
+        StyleConstants.setForeground(set, color);
+
         if (special) {
-            StyleConstants.setForeground(set, Color.BLUE);
             StyleConstants.setItalic(set, true);
         }
+
         try {
-            doc.insertString(doc.getLength(), message + "\n", set);
+            doc.insertString(doc.getLength(), senderName + ": " + message + "\n", set);
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
+    private Color getUserColor(String userName) {
+        // Gera uma cor com base no nome do usuário
+        int hash = userName.hashCode();
+        float hue = (float) Math.abs(hash % 360) / 360;
+        return Color.getHSBColor(hue, 0.5f, 0.9f);
+    }
+
     @Override
     public void deliverMsg(String senderName, String msg) throws RemoteException {
-        appendMessage(senderName + ": " + msg, false);
+        // Verifica se a mensagem não vem do próprio usuário
+        if (!senderName.equals(userName)) {
+            appendMessage(senderName, msg, false);
+        }
     }
 
     public static void main(String[] args) {
