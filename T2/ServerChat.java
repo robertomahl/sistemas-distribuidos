@@ -89,6 +89,9 @@ public class ServerChat implements IServerChat, Serializable {
 
     public static void main(String[] args) {
         try {
+            String serverIpAddress = "192.168.0.109";
+            System.setProperty("java.rmi.server.hostname", serverIpAddress);
+
             ServerChat server = new ServerChat();
 
             IServerChat stub = (IServerChat) UnicastRemoteObject.exportObject(server, 0);
