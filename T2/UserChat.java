@@ -4,7 +4,6 @@ import java.awt.Component;
 import java.awt.FlowLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.rmi.Naming;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.server.UnicastRemoteObject;
@@ -43,6 +42,7 @@ public class UserChat extends JFrame implements IUserChat {
 
         try {
             serverStub = (IServerChat) LocateRegistry.getRegistry(SERVER_IP_ADDRESS, 2020).lookup("Servidor");
+            IUserChat stub = (IUserChat) UnicastRemoteObject.exportObject(this, 0);
             updateRoomList();
             startRoomListUpdater();
         } catch (Exception e) {

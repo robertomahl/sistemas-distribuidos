@@ -1,5 +1,6 @@
 import java.io.Serializable;
 import java.rmi.RemoteException;
+import java.rmi.server.UnicastRemoteObject;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -11,6 +12,12 @@ public class RoomChat implements IRoomChat, Serializable {
     public RoomChat(String roomName) {
         this.roomName = roomName;
         this.userList = new HashMap<>();
+        try {
+            IRoomChat stub = (IRoomChat) UnicastRemoteObject.exportObject(this, 0);
+        } catch (RemoteException e) {
+            System.err.println("Room exception: " + e);
+            e.printStackTrace();
+        }
     }
 
     @Override
