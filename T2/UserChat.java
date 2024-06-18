@@ -32,6 +32,7 @@ public class UserChat extends JFrame implements IUserChat {
     private Map<String, Color> userColors; // Mapa para armazenar as cores dos usuários
     private JLabel roomNameLabel; // JLabel para exibir o nome da sala atual
 
+    private static final String SERVER_IP_ADDRESS = "192.168.0.110";
 
     public UserChat(String userName) {
         this.userName = userName;
@@ -40,7 +41,7 @@ public class UserChat extends JFrame implements IUserChat {
         initializeGUI();
 
         try {
-            serverStub = (IServerChat) LocateRegistry.getRegistry("127.0.0.1", 2020).lookup("Servidor");
+            serverStub = (IServerChat) LocateRegistry.getRegistry(SERVER_IP_ADDRESS, 2020).lookup("Servidor");
             IUserChat stub = (IUserChat) UnicastRemoteObject.exportObject(this, 0);
             updateRoomList();
             startRoomListUpdater();
@@ -162,7 +163,7 @@ public class UserChat extends JFrame implements IUserChat {
             if (currentRoomStub != null) {
                 currentRoomStub.leaveRoom(userName); // Primeiro, deixe a sala atual, se houver
             }
-            currentRoomStub = (IRoomChat) LocateRegistry.getRegistry("127.0.0.1", 2020).lookup(roomName);
+            currentRoomStub = (IRoomChat) LocateRegistry.getRegistry(SERVER_IP_ADDRESS, 2020).lookup(roomName);
             currentRoomStub.joinRoom(userName, this); // Junte-se à nova sala
             textField.setEditable(true);
             messageArea.setText("");
