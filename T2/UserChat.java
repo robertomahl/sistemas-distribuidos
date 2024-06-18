@@ -14,16 +14,7 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import javax.swing.BoxLayout;
-import javax.swing.JButton;
-import javax.swing.JFrame;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
-import javax.swing.JTextField;
-import javax.swing.JTextPane;
-import javax.swing.SwingUtilities;
+import javax.swing.*;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
@@ -39,6 +30,8 @@ public class UserChat extends JFrame implements IUserChat {
     private List<String> previousRoomList;
     private ScheduledExecutorService scheduler;
     private Map<String, Color> userColors; // Mapa para armazenar as cores dos usuários
+    private JLabel roomNameLabel; // JLabel para exibir o nome da sala atual
+
 
     public UserChat(String userName) {
         this.userName = userName;
@@ -117,6 +110,9 @@ public class UserChat extends JFrame implements IUserChat {
             }
         });
         navbar.add(exitButton);
+        roomNameLabel = new JLabel("Room Name: ");
+        roomNameLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        navbar.add(roomNameLabel, BorderLayout.NORTH);
 
         roomListPanel = new JPanel();
         roomListPanel.setLayout(new BoxLayout(roomListPanel, BoxLayout.Y_AXIS));
@@ -177,6 +173,7 @@ public class UserChat extends JFrame implements IUserChat {
             currentRoomStub.joinRoom(userName, this); // Junte-se à nova sala
             textField.setEditable(true);
             messageArea.setText("");
+            roomNameLabel.setText("Room Name: " + roomName);
             appendMessage("Joined room: ", roomName, true);
         } catch (Exception e) {
             System.err.println("Room exception: " + e.toString());
@@ -184,13 +181,14 @@ public class UserChat extends JFrame implements IUserChat {
         }
     }
 
-    private void leaveRoom() {
+    public void leaveRoom() {
         try {
             if (currentRoomStub != null) {
                 currentRoomStub.leaveRoom(userName); // Deixe a sala atual
                 currentRoomStub = null; // Limpe a referência ao stub da sala atual
                 textField.setEditable(false);
                 messageArea.setText("");
+                roomNameLabel.setText("Room Name: ");
             }
         } catch (Exception e) {
             System.err.println("Error leaving room: " + e.toString());
