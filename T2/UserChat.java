@@ -42,7 +42,7 @@ public class UserChat extends JFrame implements IUserChat {
         initializeGUI();
 
         try {
-            serverStub = (IServerChat) LocateRegistry.getRegistry("192.168.0.109", 2020).lookup("Servidor");
+            serverStub = (IServerChat) LocateRegistry.getRegistry(SERVER_IP_ADDRESS, 2020).lookup("Servidor");
             updateRoomList();
             startRoomListUpdater();
         } catch (Exception e) {

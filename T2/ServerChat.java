@@ -18,6 +18,8 @@ public class ServerChat implements IServerChat, Serializable {
     private JList<String> jList;
     private JFrame jFrame;
 
+    private static final String SERVER_IP_ADDRESS = "192.168.0.109";
+
     public ServerChat() {
         this.roomList = new ArrayList<>();
         this.roomListModel = new DefaultListModel<>();
@@ -89,8 +91,7 @@ public class ServerChat implements IServerChat, Serializable {
 
     public static void main(String[] args) {
         try {
-            String serverIpAddress = "192.168.0.109";
-            System.setProperty("java.rmi.server.hostname", serverIpAddress);
+            System.setProperty("java.rmi.server.hostname", SERVER_IP_ADDRESS);
 
             ServerChat server = new ServerChat();
 
