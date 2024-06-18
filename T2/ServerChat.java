@@ -22,7 +22,7 @@ public class ServerChat implements IServerChat, Serializable {
         this.roomList = new ArrayList<>();
         this.roomListModel = new DefaultListModel<>();
         this.jList = new JList<>(roomListModel);
-        this.jFrame = new JFrame("Server - Clique para fechar a sala");
+        this.jFrame = new JFrame("Server - Clique em uma sala para fecha-la");
 
         initGUI();
     }

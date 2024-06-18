@@ -4,6 +4,7 @@ import java.awt.Component;
 import java.awt.FlowLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.rmi.Naming;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.server.UnicastRemoteObject;
@@ -32,7 +33,7 @@ public class UserChat extends JFrame implements IUserChat {
     private Map<String, Color> userColors; // Mapa para armazenar as cores dos usuários
     private JLabel roomNameLabel; // JLabel para exibir o nome da sala atual
 
-    private static final String SERVER_IP_ADDRESS = "192.168.0.110";
+    private static final String SERVER_IP_ADDRESS = "192.168.0.109";
 
     public UserChat(String userName) {
         this.userName = userName;
@@ -41,8 +42,7 @@ public class UserChat extends JFrame implements IUserChat {
         initializeGUI();
 
         try {
-            serverStub = (IServerChat) LocateRegistry.getRegistry(SERVER_IP_ADDRESS, 2020).lookup("Servidor");
-            IUserChat stub = (IUserChat) UnicastRemoteObject.exportObject(this, 0);
+            serverStub = (IServerChat) LocateRegistry.getRegistry("192.168.0.109", 2020).lookup("Servidor");
             updateRoomList();
             startRoomListUpdater();
         } catch (Exception e) {
