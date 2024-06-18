@@ -62,7 +62,7 @@ public class ServerChat implements IServerChat, Serializable {
 
                 IRoomChat stub = (IRoomChat) UnicastRemoteObject.exportObject(room, 0);
 
-                Registry registry = LocateRegistry.getRegistry("127.0.0.1", 2020);
+                Registry registry = LocateRegistry.getRegistry(SERVER_IP_ADDRESS, 2020);
                 registry.rebind(roomName, stub);
 
                 roomList.add(roomName);
@@ -76,7 +76,7 @@ public class ServerChat implements IServerChat, Serializable {
 
     private void closeRoom(String roomName) {
         try {
-            Registry registry = LocateRegistry.getRegistry("127.0.0.1", 2020);
+            Registry registry = LocateRegistry.getRegistry(SERVER_IP_ADDRESS, 2020);
             IRoomChat roomChat = (IRoomChat) registry.lookup(roomName);
 
             roomChat.closeRoom();
