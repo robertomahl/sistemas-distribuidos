@@ -106,7 +106,6 @@ public class UserChat extends JFrame implements IUserChat {
             @Override
             public void actionPerformed(ActionEvent e) {
                 leaveRoom(); // Ao sair, deixe a sala atual
-                shutdownScheduler();
             }
         });
         navbar.add(exitButton);
@@ -133,13 +132,7 @@ public class UserChat extends JFrame implements IUserChat {
             public void run() {
                 updateRoomList();
             }
-        }, 0, 5, TimeUnit.SECONDS);
-    }
-
-    private void shutdownScheduler() {
-        if (scheduler != null) {
-            scheduler.shutdown();
-        }
+        }, 0, 1, TimeUnit.SECONDS);
     }
 
     private synchronized void updateRoomList() {
