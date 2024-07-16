@@ -164,21 +164,44 @@ public class StableMulticast {
         logicalClock.put(this.clientGroupMember.getIp(), myClock);
 
         msg = msg + "|" + Arrays.toString(myClock) + "|" + this.clientGroupMember.getIp();
+
+        // Lista para armazenar confirmações de recebimento
+        List<GroupMember> confirmations = new ArrayList<>();
+
         // envia a mensagem para todos os membros do grupo
         for (GroupMember member : groupMembers) {
-            sendUnicast(msg, member);
+            boolean sent = sendUnicast(msg, member);
+            if (sent) {
+                confirmations.add(member);
+            }
         }
+
+        // Aguarda as confirmações de recebimento
+        waitForConfirmations(confirmations);
     }
 
-    private void sendUnicast(String msg, GroupMember member) {
+    private boolean sendUnicast(String msg, GroupMember member) {
         try (DatagramSocket socket = new DatagramSocket()) {
             byte[] message = msg.getBytes();
             InetAddress address = InetAddress.getByName(member.getIp());
             DatagramPacket packet = new DatagramPacket(message, message.length, address, member.getPort());
             socket.send(packet);
+            return true; // Envio bem-sucedido
         } catch (Exception e) {
             e.printStackTrace();
+            return false; // Envio falhou
         }
+    }
+
+    private void waitForConfirmations(List<GroupMember> confirmations) {
+        // Aguarda confirmações de recebimento de todos os membros
+        // Exemplo simples: esperando um tempo fixo antes de continuar
+        try {
+            Thread.sleep(2000); // Aguarda 2 segundos para confirmação (ajustar conforme necessário)
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        System.out.println("MIDDLEWARE: Confirmations received from all members.");
     }
 
     public void mreceive() {
@@ -217,6 +240,9 @@ public class StableMulticast {
                     // Deliver message to the upper layer
                     client.deliver(message);
 
+                    // Send confirmation back to the sender
+                    sendConfirmation(sender, packet.getAddress(), packet.getPort());
+
                     // Check for stable messages to discard
                     discardStableMessages();
                 }
@@ -224,6 +250,19 @@ public class StableMulticast {
                 e.printStackTrace();
             }
         }).start();
+    }
+
+    private void sendConfirmation(String sender, InetAddress address, int port) {
+        // Cria e envia uma confirmação de recebimento para o remetente original
+        String confirmationMsg = "Received message from " + sender;
+        try (DatagramSocket socket = new DatagramSocket()) {
+            byte[] message = confirmationMsg.getBytes();
+            DatagramPacket packet = new DatagramPacket(message, message.length, address, port);
+            socket.send(packet);
+            System.out.println("MIDDLEWARE: Confirmation sent to " + sender);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
 
