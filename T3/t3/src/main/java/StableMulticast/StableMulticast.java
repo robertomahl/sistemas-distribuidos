@@ -17,8 +17,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.*;
 
-//    TODO: método getClientName() não presente na especificação do trabalho. Portanto, não estará presente no cliente de teste e o middleware não pode depender de sua existência. Remover todas referências
 public class StableMulticast {
 
     private final GroupMember clientGroupMember;
@@ -32,7 +32,40 @@ public class StableMulticast {
 
     private final CountDownLatch latch = new CountDownLatch(1);
 
-    record GroupMember(String ip, Integer port) implements Serializable {
+    static class GroupMember implements Serializable {
+        private final String ip;
+        private final Integer port;
+
+        public GroupMember(String ip, Integer port) {
+            this.ip = ip;
+            this.port = port;
+        }
+
+        public String getIp() {
+            return ip;
+        }
+
+        public Integer getPort() {
+            return port;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            GroupMember that = (GroupMember) o;
+            return Objects.equals(ip, that.ip) && Objects.equals(port, that.port);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(ip, port);
+        }
+
+        @Override
+        public String toString() {
+            return "GroupMember[ip=" + ip + ", port=" + port + "]";
+        }
     }
 
     public StableMulticast(String ip, Integer port, IStableMulticast client) {
@@ -42,6 +75,9 @@ public class StableMulticast {
         this.messageBuffer = new HashMap<>();
         this.logicalClock = new HashMap<>();
 
+        // Add the client itself to the list of group members
+        groupMembers.add(clientGroupMember);
+
         discoverGroupMembers();
         announcePresence();
         mreceive();
@@ -49,7 +85,6 @@ public class StableMulticast {
 
     private void discoverGroupMembers() {
         new Thread(() -> {
-//            TODO: melhorar definição do tamanho
             byte[] buffer = new byte[256];
 
             try (MulticastSocket multicastSocket = new MulticastSocket(MULTICAST_PORT)) {
@@ -95,7 +130,7 @@ public class StableMulticast {
                      ByteArrayOutputStream bos = new ByteArrayOutputStream();
                      ObjectOutputStream oos = new ObjectOutputStream(bos)) {
 
-                    oos.writeObject(new GroupMember(clientGroupMember.ip, clientGroupMember.port));
+                    oos.writeObject(new GroupMember(clientGroupMember.getIp(), clientGroupMember.getPort()));
                     byte[] message = bos.toByteArray();
 
                     InetAddress group = InetAddress.getByName(MULTICAST_IP);
@@ -115,15 +150,21 @@ public class StableMulticast {
             return;
         }
 
-        msg = "Unknown" + ": " + msg;
+        msg = this.clientGroupMember.toString() + ": " + msg;
 
-        // Update the logical clock
-//        int[] myClock = logicalClock.getOrDefault(this.client.getClientName(), new int[groupMembers.size()]);
-//        myClock[getIndex(this.clientGroupMember)]++;
-//        logicalClock.put(this.client.getClientName(), myClock);
+        // constroi o timestamp do relogio
+        int[] myClock = logicalClock.getOrDefault(this.clientGroupMember.getIp(), new int[groupMembers.size()]);
+        int myIndex = getIndex(this.clientGroupMember);
+        if (myIndex != -1) {
+            myClock[myIndex]++;
+        } else {
+            System.err.println("MIDDLEWARE: Error - client group member not found in groupMembers.");
+            return;
+        }
+        logicalClock.put(this.clientGroupMember.getIp(), myClock);
 
-//        msg = msg + "|" + Arrays.toString(myClock) + "|" + this.client.getClientName();
-
+        msg = msg + "|" + Arrays.toString(myClock) + "|" + this.clientGroupMember.getIp();
+        // envia a mensagem para todos os membros do grupo
         for (GroupMember member : groupMembers) {
             sendUnicast(msg, member);
         }
@@ -132,8 +173,8 @@ public class StableMulticast {
     private void sendUnicast(String msg, GroupMember member) {
         try (DatagramSocket socket = new DatagramSocket()) {
             byte[] message = msg.getBytes();
-            InetAddress address = InetAddress.getByName(member.ip);
-            DatagramPacket packet = new DatagramPacket(message, message.length, address, member.port);
+            InetAddress address = InetAddress.getByName(member.getIp());
+            DatagramPacket packet = new DatagramPacket(message, message.length, address, member.getPort());
             socket.send(packet);
         } catch (Exception e) {
             e.printStackTrace();
@@ -141,46 +182,50 @@ public class StableMulticast {
     }
 
     public void mreceive() {
-//        String[] parts = msg.split("\\|");
-//        String message = parts[0];
-//        String clockString = parts[1];
-//        String sender = parts[2];
-//
-//        int[] senderClock = parseClock(clockString);
-//
-//        // Update the logical clock
-//        logicalClock.put(sender, senderClock);
-//
-//        int[] myClock = logicalClock.getOrDefault(this.client.getClientName(), new int[groupMembers.size()]);
-//        if (!sender.equals(this.client.getClientName())) {
-//            myClock[getIndex(sender)]++;
-//        }
-//        logicalClock.put(this.client.getClientName(), myClock);
-
-        // Deliver the message to the client
-//        client.deliver(message);
-//
-//        // Check for stable messages to discard
-//        discardStableMessages();
-
         new Thread(() -> {
-            try (DatagramSocket socket = new DatagramSocket(clientGroupMember.port)) {
-//                TODO: melhorar definição do tamanho
+            try (DatagramSocket socket = new DatagramSocket(clientGroupMember.getPort())) {
                 byte[] buffer = new byte[256];
 
                 while (true) {
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                     socket.receive(packet);
 
-                    final var message = new String(packet.getData(), 0, packet.getLength());
+                    String receivedMsg = new String(packet.getData(), 0, packet.getLength());
+                    String[] parts = receivedMsg.split("\\|");
+                    String message = parts[0];
+                    String clockString = parts[1];
+                    String sender = parts[2];
 
+                    int[] senderClock = parseClock(clockString);
+
+                    // Update local vector clock with sender's clock
+                    logicalClock.put(sender, senderClock);
+
+                    // Deposit message into the buffer
+                    messageBuffer.put(UUID.randomUUID().toString(), receivedMsg);
+
+                    // Update received message counter if sender is different
+                    if (!sender.equals(clientGroupMember.getIp())) {
+                        int[] myClock = logicalClock.getOrDefault(clientGroupMember.getIp(), new int[groupMembers.size()]);
+                        int senderIndex = getMemberIndex(sender);
+                        if (senderIndex != -1) {
+                            myClock[senderIndex]++;
+                            logicalClock.put(clientGroupMember.getIp(), myClock);
+                        }
+                    }
+
+                    // Deliver message to the upper layer
                     client.deliver(message);
+
+                    // Check for stable messages to discard
+                    discardStableMessages();
                 }
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }).start();
     }
+
 
     private int[] parseClock(String clockString) {
         clockString = clockString.replace("[", "").replace("]", "").replace(" ", "");
@@ -196,26 +241,40 @@ public class StableMulticast {
         return groupMembers.indexOf(member);
     }
 
-    private void discardStableMessages() {
-//        for (Map.Entry<String, String> entry : messageBuffer.entrySet()) {
-//            String message = entry.getValue();
-//            String[] parts = message.split("\\|");
-//            String clockString = parts[1];
-//            int[] msgClock = parseClock(clockString);
-//            String sender = parts[2];
-//
-//            boolean stable = true;
-//            for (int[] clock : logicalClock.values()) {
-//                if (msgClock[getIndex(sender)] > clock[getIndex(sender)]) {
-//                    stable = false;
-//                    break;
-//                }
-//            }
-//
-//            if (stable) {
-//                messageBuffer.remove(entry.getKey());
-//                System.out.println("MIDDLEWARE: Discarded stable message: " + entry.getKey());
-//            }
-//        }
+    private int getMemberIndex(String ip) {
+        for (int i = 0; i < groupMembers.size(); i++) {
+            if (groupMembers.get(i).getIp().equals(ip)) {
+                return i;
+            }
+        }
+        return -1;
     }
+
+    private void discardStableMessages() {
+        for (Map.Entry<String, String> entry : messageBuffer.entrySet()) {
+            String message = entry.getValue();
+            String[] parts = message.split("\\|");
+            String clockString = parts[1];
+            int[] msgClock = parseClock(clockString);
+            String sender = parts[2];
+
+            int senderIndex = getMemberIndex(sender);
+
+            if (senderIndex == -1) continue; // Skip if the sender is not found
+
+            boolean stable = true;
+            for (int[] clock : logicalClock.values()) {
+                if (msgClock[senderIndex] > clock[senderIndex]) {
+                    stable = false;
+                    break;
+                }
+            }
+
+            if (stable) {
+                messageBuffer.remove(entry.getKey());
+                System.out.println("MIDDLEWARE: Discarded stable message: " + entry.getKey());
+            }
+        }
+    }
+
 }

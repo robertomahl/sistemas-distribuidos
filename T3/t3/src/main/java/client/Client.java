@@ -6,7 +6,7 @@ import java.util.Scanner;
 
 public class Client implements IStableMulticast {
     private StableMulticast stableMulticast;
-    private String clientName;
+    public String clientName;
 
     private Client(String clientName) {
         this.clientName = clientName;
