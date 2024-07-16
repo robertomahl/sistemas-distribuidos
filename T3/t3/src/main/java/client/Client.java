@@ -25,12 +25,6 @@ public class Client implements IStableMulticast {
         stableMulticast.msend(msg);
     }
 
-    //    TODO: método não presente na especificação do trabalho. Portanto, não estará presente no cliente de teste e o middleware não pode depender de sua existência. Remover todas referências
-    @Override
-    public String getClientName() {
-        return this.clientName;
-    }
-
     public static void main(String[] args) {
         var clientIp = args[0];
         var clientPort = Integer.parseInt(args[1]);

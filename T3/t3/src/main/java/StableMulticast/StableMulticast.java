@@ -32,11 +32,11 @@ public class StableMulticast {
 
     private final CountDownLatch latch = new CountDownLatch(1);
 
-    record GroupMember(String name, String ip, Integer port) implements Serializable {
+    record GroupMember(String ip, Integer port) implements Serializable {
     }
 
     public StableMulticast(String ip, Integer port, IStableMulticast client) {
-        this.clientGroupMember = new GroupMember(client.getClientName(), ip, port);
+        this.clientGroupMember = new GroupMember(ip, port);
         this.client = client;
         this.groupMembers = new ArrayList<>();
         this.messageBuffer = new HashMap<>();
@@ -95,7 +95,7 @@ public class StableMulticast {
                      ByteArrayOutputStream bos = new ByteArrayOutputStream();
                      ObjectOutputStream oos = new ObjectOutputStream(bos)) {
 
-                    oos.writeObject(new GroupMember(client.getClientName(), clientGroupMember.ip, clientGroupMember.port));
+                    oos.writeObject(new GroupMember(clientGroupMember.ip, clientGroupMember.port));
                     byte[] message = bos.toByteArray();
 
                     InetAddress group = InetAddress.getByName(MULTICAST_IP);
@@ -115,7 +115,7 @@ public class StableMulticast {
             return;
         }
 
-        msg = clientGroupMember.name + ": " + msg;
+        msg = "Unknown" + ": " + msg;
 
         // Update the logical clock
 //        int[] myClock = logicalClock.getOrDefault(this.client.getClientName(), new int[groupMembers.size()]);
