@@ -135,11 +135,11 @@ public class StableMulticast {
                 System.out.println("Enviar a todos? (y/n)");
                 Scanner in = new Scanner(System.in);
                 shouldSendToAll = in.nextLine().equals("y");
-            }
-            if (!shouldSendToAll) {
-                System.out.println("Pressione qualquer tecla para enviar:");
-                Scanner in = new Scanner(System.in);
-                in.nextLine();
+
+                if (!shouldSendToAll) {
+                    System.out.println("Pressione qualquer tecla para enviar:");
+                    in.nextLine();
+                }
             }
 
             try (DatagramSocket socket = new DatagramSocket()) {
