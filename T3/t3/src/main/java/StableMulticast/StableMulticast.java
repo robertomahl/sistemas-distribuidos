@@ -16,56 +16,27 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.*;
 
 public class StableMulticast {
 
     private final GroupMember clientGroupMember;
     private final IStableMulticast client;
     private final List<GroupMember> groupMembers;
-    private final Map<String, String> messageBuffer;
+    private final Map<String, Message> messageBuffer;
     private final Map<String, int[]> logicalClock;
 
     public static final String MULTICAST_IP = "224.0.0.1";
     public static final Integer MULTICAST_PORT = 4446;
+    public static final Integer BUFFER_SIZE = 1024;
 
     private final CountDownLatch latch = new CountDownLatch(1);
 
-    static class GroupMember implements Serializable {
-        private final String ip;
-        private final Integer port;
+    record GroupMember(String ip, Integer port) implements Serializable {
+    }
 
-        public GroupMember(String ip, Integer port) {
-            this.ip = ip;
-            this.port = port;
-        }
-
-        public String getIp() {
-            return ip;
-        }
-
-        public Integer getPort() {
-            return port;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            GroupMember that = (GroupMember) o;
-            return Objects.equals(ip, that.ip) && Objects.equals(port, that.port);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(ip, port);
-        }
-
-        @Override
-        public String toString() {
-            return "GroupMember[ip=" + ip + ", port=" + port + "]";
-        }
+    record Message(String msg, int[] clock, GroupMember groupMember) implements Serializable {
     }
 
     public StableMulticast(String ip, Integer port, IStableMulticast client) {
@@ -75,7 +46,7 @@ public class StableMulticast {
         this.messageBuffer = new HashMap<>();
         this.logicalClock = new HashMap<>();
 
-        // Add the client itself to the list of group members
+        // TODO: review if really necessary
         groupMembers.add(clientGroupMember);
 
         discoverGroupMembers();
@@ -85,7 +56,7 @@ public class StableMulticast {
 
     private void discoverGroupMembers() {
         new Thread(() -> {
-            byte[] buffer = new byte[256];
+            byte[] buffer = new byte[BUFFER_SIZE];
 
             try (MulticastSocket multicastSocket = new MulticastSocket(MULTICAST_PORT)) {
 
@@ -126,124 +97,90 @@ public class StableMulticast {
         new Thread(() -> {
             try {
                 latch.await();
-                try (MulticastSocket multicastSocket = new MulticastSocket();
-                     ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                     ObjectOutputStream oos = new ObjectOutputStream(bos)) {
 
-                    oos.writeObject(new GroupMember(clientGroupMember.getIp(), clientGroupMember.getPort()));
-                    byte[] message = bos.toByteArray();
-
-                    InetAddress group = InetAddress.getByName(MULTICAST_IP);
-
-                    DatagramPacket packet = new DatagramPacket(message, message.length, group, MULTICAST_PORT);
-                    multicastSocket.send(packet);
+                try (MulticastSocket multicastSocket = new MulticastSocket()) {
+                    GroupMember groupMember = new GroupMember(clientGroupMember.ip(), clientGroupMember.port());
+                    sendDatagram(multicastSocket, groupMember, InetAddress.getByName(MULTICAST_IP), MULTICAST_PORT);
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
+
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }).start();
     }
 
-    public void msend(String msg) {
+    public void msend(final String msg) {
         if (groupMembers.isEmpty()) {
             System.out.println("MIDDLEWARE: No group members available to send the message.");
             return;
         }
 
-        msg = this.clientGroupMember.toString() + ": " + msg;
+        final var senderAndMsg = clientGroupMember.toString() + ": " + msg;
 
-        // constroi o timestamp do relogio
-        int[] myClock = logicalClock.getOrDefault(this.clientGroupMember.getIp(), new int[groupMembers.size()]);
-        int myIndex = getIndex(this.clientGroupMember);
-        if (myIndex != -1) {
-            myClock[myIndex]++;
-        } else {
-            System.err.println("MIDDLEWARE: Error - client group member not found in groupMembers.");
-            return;
-        }
-        logicalClock.put(this.clientGroupMember.getIp(), myClock);
+        int[] myClock = logicalClock.getOrDefault(clientGroupMember.ip(), new int[groupMembers.size()]);
+        myClock[getIndex(clientGroupMember)]++;
+        logicalClock.put(clientGroupMember.ip(), myClock);
 
-        msg = msg + "|" + Arrays.toString(myClock) + "|" + this.clientGroupMember.getIp();
-
-        // Lista para armazenar confirmações de recebimento
-        List<GroupMember> confirmations = new ArrayList<>();
-
-        // envia a mensagem para todos os membros do grupo
+        Message message = new Message(senderAndMsg, myClock, clientGroupMember);
         for (GroupMember member : groupMembers) {
-            boolean sent = sendUnicast(msg, member);
-            if (sent) {
-                confirmations.add(member);
-            }
-        }
 
-        // Aguarda as confirmações de recebimento
-        waitForConfirmations(confirmations);
+            // TODO: pedir confirmação de envio um a um ou a todos
+            try (DatagramSocket socket = new DatagramSocket()) {
+                sendDatagram(socket, message, InetAddress.getByName(member.ip()), member.port());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+        }
     }
 
-    private boolean sendUnicast(String msg, GroupMember member) {
-        try (DatagramSocket socket = new DatagramSocket()) {
-            byte[] message = msg.getBytes();
-            InetAddress address = InetAddress.getByName(member.getIp());
-            DatagramPacket packet = new DatagramPacket(message, message.length, address, member.getPort());
+    private void sendDatagram(DatagramSocket socket, Object content, InetAddress address, int port) {
+        try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
+             ObjectOutputStream oos = new ObjectOutputStream(bos)) {
+
+            oos.writeObject(content);
+            byte[] message = bos.toByteArray();
+
+            DatagramPacket packet = new DatagramPacket(message, message.length, address, port);
             socket.send(packet);
-            return true; // Envio bem-sucedido
         } catch (Exception e) {
             e.printStackTrace();
-            return false; // Envio falhou
         }
-    }
-
-    private void waitForConfirmations(List<GroupMember> confirmations) {
-        // Aguarda confirmações de recebimento de todos os membros
-        // Exemplo simples: esperando um tempo fixo antes de continuar
-        try {
-            Thread.sleep(2000); // Aguarda 2 segundos para confirmação (ajustar conforme necessário)
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        System.out.println("MIDDLEWARE: Confirmations received from all members.");
     }
 
     public void mreceive() {
         new Thread(() -> {
-            try (DatagramSocket socket = new DatagramSocket(clientGroupMember.getPort())) {
-                byte[] buffer = new byte[256];
+            try (DatagramSocket socket = new DatagramSocket(clientGroupMember.port())) {
+                // TODO: improve buffer definition
+                byte[] buffer = new byte[BUFFER_SIZE];
 
                 while (true) {
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                     socket.receive(packet);
 
-                    String receivedMsg = new String(packet.getData(), 0, packet.getLength());
-                    String[] parts = receivedMsg.split("\\|");
-                    String message = parts[0];
-                    String clockString = parts[1];
-                    String sender = parts[2];
+                    Message received;
 
-                    int[] senderClock = parseClock(clockString);
+                    try (ByteArrayInputStream bis = new ByteArrayInputStream(packet.getData());
+                         ObjectInputStream ois = new ObjectInputStream(bis)) {
 
-                    // Update local vector clock with sender's clock
-                    logicalClock.put(sender, senderClock);
-
-                    // Deposit message into the buffer
-                    messageBuffer.put(UUID.randomUUID().toString(), receivedMsg);
-
-                    // Update received message counter if sender is different
-                    if (!sender.equals(clientGroupMember.getIp())) {
-                        int[] myClock = logicalClock.getOrDefault(clientGroupMember.getIp(), new int[groupMembers.size()]);
-                        int senderIndex = getMemberIndex(sender);
-                        if (senderIndex != -1) {
-                            myClock[senderIndex]++;
-                            logicalClock.put(clientGroupMember.getIp(), myClock);
-                        }
+                        received = (Message) ois.readObject();
                     }
 
-                    // Deliver message to the upper layer
-                    client.deliver(message);
+                    messageBuffer.put(UUID.randomUUID().toString(), received);
 
-                    // Send confirmation back to the sender
-                    sendConfirmation(sender, packet.getAddress(), packet.getPort());
+                    logicalClock.put(received.groupMember().ip(), received.clock());
 
-                    // Check for stable messages to discard
+                    if (!received.groupMember().equals(clientGroupMember)) {
+                        int[] myClock = logicalClock.getOrDefault(clientGroupMember.ip(), new int[groupMembers.size()]);
+                        int senderIndex = getMemberIndex(received.groupMember());
+                        myClock[senderIndex]++;
+                        logicalClock.put(clientGroupMember.ip(), myClock);
+                    }
+
+                    client.deliver(received.msg());
+
                     discardStableMessages();
                 }
             } catch (Exception e) {
@@ -252,37 +189,17 @@ public class StableMulticast {
         }).start();
     }
 
-    private void sendConfirmation(String sender, InetAddress address, int port) {
-        // Cria e envia uma confirmação de recebimento para o remetente original
-        String confirmationMsg = "Received message from " + sender;
-        try (DatagramSocket socket = new DatagramSocket()) {
-            byte[] message = confirmationMsg.getBytes();
-            DatagramPacket packet = new DatagramPacket(message, message.length, address, port);
-            socket.send(packet);
-            System.out.println("MIDDLEWARE: Confirmation sent to " + sender);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-
-    private int[] parseClock(String clockString) {
-        clockString = clockString.replace("[", "").replace("]", "").replace(" ", "");
-        String[] parts = clockString.split(",");
-        int[] clock = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            clock[i] = Integer.parseInt(parts[i]);
-        }
-        return clock;
-    }
-
     private int getIndex(GroupMember member) {
-        return groupMembers.indexOf(member);
+        int index = groupMembers.indexOf(member);
+        if (index == -1) {
+            throw new RuntimeException("MIDDLEWARE: Error - client group member not found in groupMembers");
+        }
+        return index;
     }
 
-    private int getMemberIndex(String ip) {
+    private int getMemberIndex(GroupMember groupMember) {
         for (int i = 0; i < groupMembers.size(); i++) {
-            if (groupMembers.get(i).getIp().equals(ip)) {
+            if (groupMembers.get(i).equals(groupMember)) {
                 return i;
             }
         }
@@ -290,20 +207,14 @@ public class StableMulticast {
     }
 
     private void discardStableMessages() {
-        for (Map.Entry<String, String> entry : messageBuffer.entrySet()) {
-            String message = entry.getValue();
-            String[] parts = message.split("\\|");
-            String clockString = parts[1];
-            int[] msgClock = parseClock(clockString);
-            String sender = parts[2];
+        for (Map.Entry<String, Message> entry : messageBuffer.entrySet()) {
+            Message message = entry.getValue();
 
-            int senderIndex = getMemberIndex(sender);
-
-            if (senderIndex == -1) continue; // Skip if the sender is not found
+            int senderIndex = getMemberIndex(message.groupMember());
 
             boolean stable = true;
             for (int[] clock : logicalClock.values()) {
-                if (msgClock[senderIndex] > clock[senderIndex]) {
+                if (message.clock()[senderIndex] > clock[senderIndex]) {
                     stable = false;
                     break;
                 }
