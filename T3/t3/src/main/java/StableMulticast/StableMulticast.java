@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
@@ -30,6 +31,9 @@ public class StableMulticast {
     public static final String MULTICAST_IP = "224.0.0.1";
     public static final Integer MULTICAST_PORT = 4446;
     public static final Integer BUFFER_SIZE = 1024;
+
+    // TODO: O conteúdo do buffer e dos relógios lógicos também precisam ser permanentemente demonstrados na tela/terminal.
+    // TODO: revisar descrição do trabalho
 
     private final CountDownLatch latch = new CountDownLatch(1);
 
@@ -46,7 +50,6 @@ public class StableMulticast {
         this.messageBuffer = new HashMap<>();
         this.logicalClock = new HashMap<>();
 
-        // TODO: review if really necessary
         groupMembers.add(clientGroupMember);
 
         discoverGroupMembers();
@@ -123,10 +126,22 @@ public class StableMulticast {
         myClock[getIndex(clientGroupMember)]++;
         logicalClock.put(clientGroupMember.ip(), myClock);
 
-        Message message = new Message(senderAndMsg, myClock, clientGroupMember);
+        final var message = new Message(senderAndMsg, myClock, clientGroupMember);
+
+        Boolean shouldSendToAll = Boolean.FALSE;
         for (GroupMember member : groupMembers) {
 
-            // TODO: pedir confirmação de envio um a um ou a todos
+            if (!shouldSendToAll) {
+                System.out.println("Enviar a todos? (y/n)");
+                Scanner in = new Scanner(System.in);
+                shouldSendToAll = in.nextLine().equals("y");
+            }
+            if (!shouldSendToAll) {
+                System.out.println("Pressione qualquer tecla para enviar:");
+                Scanner in = new Scanner(System.in);
+                in.nextLine();
+            }
+
             try (DatagramSocket socket = new DatagramSocket()) {
                 sendDatagram(socket, message, InetAddress.getByName(member.ip()), member.port());
             } catch (Exception e) {
@@ -153,7 +168,6 @@ public class StableMulticast {
     public void mreceive() {
         new Thread(() -> {
             try (DatagramSocket socket = new DatagramSocket(clientGroupMember.port())) {
-                // TODO: improve buffer definition
                 byte[] buffer = new byte[BUFFER_SIZE];
 
                 while (true) {
@@ -174,7 +188,7 @@ public class StableMulticast {
 
                     if (!received.groupMember().equals(clientGroupMember)) {
                         int[] myClock = logicalClock.getOrDefault(clientGroupMember.ip(), new int[groupMembers.size()]);
-                        int senderIndex = getMemberIndex(received.groupMember());
+                        int senderIndex = getIndex(received.groupMember());
                         myClock[senderIndex]++;
                         logicalClock.put(clientGroupMember.ip(), myClock);
                     }
@@ -197,20 +211,11 @@ public class StableMulticast {
         return index;
     }
 
-    private int getMemberIndex(GroupMember groupMember) {
-        for (int i = 0; i < groupMembers.size(); i++) {
-            if (groupMembers.get(i).equals(groupMember)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
     private void discardStableMessages() {
         for (Map.Entry<String, Message> entry : messageBuffer.entrySet()) {
             Message message = entry.getValue();
 
-            int senderIndex = getMemberIndex(message.groupMember());
+            int senderIndex = getIndex(message.groupMember());
 
             boolean stable = true;
             for (int[] clock : logicalClock.values()) {
