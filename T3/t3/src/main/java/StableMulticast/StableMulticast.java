@@ -154,7 +154,7 @@ public class StableMulticast {
             } else {
                 delayedMessages.put(message, selectedMembers);
                 messageBuffer.put(message, message);
-                System.out.println("MIDDLEWARE: Mensagem armazenada para envio posterior. Pressione 'e' para enviar todas as mensagens atrasadas.");
+                System.out.println("MIDDLEWARE: Mensagem armazenada para envio posterior");
             }
 
         } else {
@@ -168,6 +168,7 @@ public class StableMulticast {
         }
 
         printBufferAndClock();
+        monitorDelayMessages();
     }
 
     private void printBufferAndClock() {
@@ -281,6 +282,7 @@ public class StableMulticast {
             messageBuffer.remove(key);
             System.out.println("MIDDLEWARE: Discarded stable message: " + key.msg());
         }
+        monitorDelayMessages();
     }
 
     private int getIndex(GroupMember member) {
@@ -307,18 +309,22 @@ public class StableMulticast {
             sendToRecipients(entry.getKey(), entry.getValue());
         }
         delayedMessages.clear();
+        messageBuffer.clear();
         System.out.println("MIDDLEWARE: Todas as mensagens atrasadas foram enviadas.");
     }
 
-    private void monitorUserInput() {
-        new Thread(() -> {
-            Scanner in = new Scanner(System.in);
-            while (true) {
-                String command = in.nextLine();
-                if (command.equals("e")) {
-                    sendDelayedMessages();
-                }
-            }
-        }).start();
+    private void monitorDelayMessages() {
+        //@TODO para enviar novas mensagens a pessoa nao poderia ter mensagens no buffer?
+        //@TODO ver se para mostrar a mensagem o buffer tem q ter algo
+        System.out.println("Deseja enviar mensagens atrasadas?y/n");
+        Scanner in = new Scanner(System.in);
+        Boolean sendMessages = in.nextLine().equals("y");
+        if(sendMessages){
+            sendDelayedMessages();
+        }
     }
 }
+
+//@TODO ver como ta o funcionamento do relogio e a ordenacao dele
+//@TODO ver se todas as funcoes que verificam o ordenamento do relogio realmente precisam - pode ter coisa inultil
+//@TODO falaram q soh precisava do relogio para ir descartando as mensagens do buffer - ver como isso ta sendo feito
