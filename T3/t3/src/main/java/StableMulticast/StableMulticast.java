@@ -39,7 +39,7 @@ public class StableMulticast {
         discoverGroupMembers();
         announcePresence();
         mreceive();
-        monitorUserInput();
+        //monitorUserInput();
     }
 
     private void discoverGroupMembers() {
@@ -110,7 +110,8 @@ public class StableMulticast {
         myClock[getIndex(clientGroupMember)]++;
         logicalClock.put(clientGroupMember.ip(), myClock);
 
-        final var message = new Message(senderAndMsg, myClock, clientGroupMember);
+        // Clone the clock to ensure uniqueness
+        final var message = new Message(senderAndMsg, myClock.clone(), clientGroupMember);
 
         Scanner in = new Scanner(System.in);
 
@@ -213,8 +214,8 @@ public class StableMulticast {
                         received = (Message) ois.readObject();
                     }
 
+                    // Update messageBuffer and logicalClock
                     messageBuffer.put(received, received);
-
                     logicalClock.put(received.groupMember().ip(), received.clock());
 
                     if (!received.groupMember().equals(clientGroupMember)) {
@@ -224,6 +225,7 @@ public class StableMulticast {
                         logicalClock.put(clientGroupMember.ip(), myClock);
                     }
 
+                    // Sort messages by logical clock
                     List<Map.Entry<Message, Message>> sortedMessages = new ArrayList<>(messageBuffer.entrySet());
                     sortedMessages.sort((entry1, entry2) -> {
                         Message msg1 = entry1.getValue();
