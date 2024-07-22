@@ -1,23 +1,8 @@
 package StableMulticast;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.MulticastSocket;
-import java.net.NetworkInterface;
-import java.net.SocketAddress;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Scanner;
-import java.util.UUID;
+import java.io.*;
+import java.net.*;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 
 public class StableMulticast {
@@ -25,15 +10,13 @@ public class StableMulticast {
     private final GroupMember clientGroupMember;
     private final IStableMulticast client;
     private final List<GroupMember> groupMembers;
-    private final Map<String, Message> messageBuffer;
+    private final Map<Message, Message> messageBuffer;
     private final Map<String, int[]> logicalClock;
+    private final Map<Message, List<Integer>> delayedMessages;
 
     public static final String MULTICAST_IP = "224.0.0.1";
     public static final Integer MULTICAST_PORT = 4446;
     public static final Integer BUFFER_SIZE = 1024;
-
-    // TODO: O conteúdo do buffer e dos relógios lógicos também precisam ser permanentemente demonstrados na tela/terminal.
-    // TODO: revisar descrição do trabalho
 
     private final CountDownLatch latch = new CountDownLatch(1);
 
@@ -49,12 +32,14 @@ public class StableMulticast {
         this.groupMembers = new ArrayList<>();
         this.messageBuffer = new HashMap<>();
         this.logicalClock = new HashMap<>();
+        this.delayedMessages = new HashMap<>();
 
         groupMembers.add(clientGroupMember);
 
         discoverGroupMembers();
         announcePresence();
         mreceive();
+        monitorUserInput();
     }
 
     private void discoverGroupMembers() {
@@ -62,7 +47,6 @@ public class StableMulticast {
             byte[] buffer = new byte[BUFFER_SIZE];
 
             try (MulticastSocket multicastSocket = new MulticastSocket(MULTICAST_PORT)) {
-
                 InetAddress group = InetAddress.getByName(MULTICAST_IP);
                 NetworkInterface netIf = NetworkInterface.getByInetAddress(InetAddress.getLocalHost());
                 SocketAddress groupAddress = new InetSocketAddress(group, MULTICAST_PORT);
@@ -128,26 +112,73 @@ public class StableMulticast {
 
         final var message = new Message(senderAndMsg, myClock, clientGroupMember);
 
-        Boolean shouldSendToAll = Boolean.FALSE;
-        for (GroupMember member : groupMembers) {
+        Scanner in = new Scanner(System.in);
 
-            if (!shouldSendToAll) {
-                System.out.println("Enviar a todos? (y/n)");
-                Scanner in = new Scanner(System.in);
-                shouldSendToAll = in.nextLine().equals("y");
+        System.out.println("Enviar a todos? (y/n)");
+        Boolean shouldSendToAll = in.nextLine().equals("y");
 
-                if (!shouldSendToAll) {
-                    System.out.println("Pressione qualquer tecla para enviar:");
-                    in.nextLine();
+        if (!shouldSendToAll) {
+            System.out.println("Escolha os membros para enviar a mensagem (digite o número correspondente, separados por vírgula):");
+            for (int i = 0; i < groupMembers.size(); i++) {
+                GroupMember member = groupMembers.get(i);
+                System.out.println((i + 1) + ": " + member.ip() + ":" + member.port());
+            }
+
+            String[] selectedIndices = in.nextLine().split(",");
+            List<Integer> selectedMembers = new ArrayList<>();
+            for (String index : selectedIndices) {
+                try {
+                    int memberIndex = Integer.parseInt(index.trim()) - 1;
+                    if (memberIndex >= 0 && memberIndex < groupMembers.size()) {
+                        selectedMembers.add(memberIndex);
+                    } else {
+                        System.out.println("Índice inválido: " + (memberIndex + 1));
+                    }
+                } catch (NumberFormatException e) {
+                    System.out.println("Formato de índice inválido: " + index);
                 }
             }
+            System.out.println("Enviar agora? (y/n)");
+            Boolean sendNow = in.nextLine().equals("y");
 
-            try (DatagramSocket socket = new DatagramSocket()) {
-                sendDatagram(socket, message, InetAddress.getByName(member.ip()), member.port());
-            } catch (Exception e) {
-                e.printStackTrace();
+            if (sendNow) {
+                for (int index : selectedMembers) {
+                    GroupMember member = groupMembers.get(index);
+                    try (DatagramSocket socket = new DatagramSocket()) {
+                        sendDatagram(socket, message, InetAddress.getByName(member.ip()), member.port());
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            } else {
+                delayedMessages.put(message, selectedMembers);
+                messageBuffer.put(message, message);
+                System.out.println("MIDDLEWARE: Mensagem armazenada para envio posterior. Pressione 'e' para enviar todas as mensagens atrasadas.");
             }
 
+        } else {
+            for (GroupMember member : groupMembers) {
+                try (DatagramSocket socket = new DatagramSocket()) {
+                    sendDatagram(socket, message, InetAddress.getByName(member.ip()), member.port());
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        printBufferAndClock();
+    }
+
+    private void printBufferAndClock() {
+        System.out.println("Buffer de Mensagens:");
+        for (Map.Entry<Message, Message> entry : messageBuffer.entrySet()) {
+            System.out.println("Mensagem: " + entry.getValue().msg() +
+                    " | Relógio: " + Arrays.toString(entry.getValue().clock()));
+        }
+
+        System.out.println("\nRelógio Lógico dos Processos:");
+        for (Map.Entry<String, int[]> entry : logicalClock.entrySet()) {
+            System.out.println("IP: " + entry.getKey() + " | Relógio: " + Arrays.toString(entry.getValue()));
         }
     }
 
@@ -182,7 +213,7 @@ public class StableMulticast {
                         received = (Message) ois.readObject();
                     }
 
-                    messageBuffer.put(UUID.randomUUID().toString(), received);
+                    messageBuffer.put(received, received);
 
                     logicalClock.put(received.groupMember().ip(), received.clock());
 
@@ -193,7 +224,16 @@ public class StableMulticast {
                         logicalClock.put(clientGroupMember.ip(), myClock);
                     }
 
-                    client.deliver(received.msg());
+                    List<Map.Entry<Message, Message>> sortedMessages = new ArrayList<>(messageBuffer.entrySet());
+                    sortedMessages.sort((entry1, entry2) -> {
+                        Message msg1 = entry1.getValue();
+                        Message msg2 = entry2.getValue();
+                        return compareLogicalClocks(msg1.clock(), msg2.clock());
+                    });
+
+                    for (Map.Entry<Message, Message> entry : sortedMessages) {
+                        client.deliver(entry.getValue().msg());
+                    }
 
                     discardStableMessages();
                 }
@@ -203,16 +243,21 @@ public class StableMulticast {
         }).start();
     }
 
-    private int getIndex(GroupMember member) {
-        int index = groupMembers.indexOf(member);
-        if (index == -1) {
-            throw new RuntimeException("MIDDLEWARE: Error - client group member not found in groupMembers");
+    private int compareLogicalClocks(int[] clock1, int[] clock2) {
+        for (int i = 0; i < clock1.length; i++) {
+            if (clock1[i] < clock2[i]) {
+                return -1;
+            } else if (clock1[i] > clock2[i]) {
+                return 1;
+            }
         }
-        return index;
+        return 0;
     }
 
     private void discardStableMessages() {
-        for (Map.Entry<String, Message> entry : messageBuffer.entrySet()) {
+        List<Message> stableMessages = new ArrayList<>();
+
+        for (Map.Entry<Message, Message> entry : messageBuffer.entrySet()) {
             Message message = entry.getValue();
 
             int senderIndex = getIndex(message.groupMember());
@@ -226,10 +271,52 @@ public class StableMulticast {
             }
 
             if (stable) {
-                messageBuffer.remove(entry.getKey());
-                System.out.println("MIDDLEWARE: Discarded stable message: " + entry.getKey());
+                stableMessages.add(entry.getKey());
+            }
+        }
+
+        for (Message key : stableMessages) {
+            messageBuffer.remove(key);
+            System.out.println("MIDDLEWARE: Discarded stable message: " + key.msg());
+        }
+    }
+
+    private int getIndex(GroupMember member) {
+        int index = groupMembers.indexOf(member);
+        if (index == -1) {
+            throw new RuntimeException("MIDDLEWARE: Error - client group member not found in groupMembers");
+        }
+        return index;
+    }
+
+    private void sendToRecipients(Message message, List<Integer> selectedMembers) {
+        for (int index : selectedMembers) {
+            GroupMember member = groupMembers.get(index);
+            try (DatagramSocket socket = new DatagramSocket()) {
+                sendDatagram(socket, message, InetAddress.getByName(member.ip()), member.port());
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
     }
 
+    private void sendDelayedMessages() {
+        for (Map.Entry<Message, List<Integer>> entry : delayedMessages.entrySet()) {
+            sendToRecipients(entry.getKey(), entry.getValue());
+        }
+        delayedMessages.clear();
+        System.out.println("MIDDLEWARE: Todas as mensagens atrasadas foram enviadas.");
+    }
+
+    private void monitorUserInput() {
+        new Thread(() -> {
+            Scanner in = new Scanner(System.in);
+            while (true) {
+                String command = in.nextLine();
+                if (command.equals("e")) {
+                    sendDelayedMessages();
+                }
+            }
+        }).start();
+    }
 }
