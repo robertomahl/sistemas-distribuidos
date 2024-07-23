@@ -226,11 +226,17 @@ public class StableMulticast {
                     messageBuffer.put(UUID.randomUUID(), received);
 
                     if (!received.groupMember().equals(clientGroupMember)) {
-                        logicalClock.put(received.groupMember(), received.clock());
-                        int[] myClock = logicalClock.getOrDefault(clientGroupMember, new int[groupMembers.size()]);
+                        int[] receivedClock = received.clock();
+                        int[] currentClock = logicalClock.getOrDefault(clientGroupMember, new int[groupMembers.size()]);
                         int senderIndex = getIndex(received.groupMember());
-                        myClock[senderIndex]++;
-                        logicalClock.put(clientGroupMember, myClock);
+
+                        // Pega o maior entre o atual e o recebido
+                        for (int i = 0; i < currentClock.length; i++) {
+                            currentClock[i] = Math.max(currentClock[i], receivedClock[i]);
+                        }
+                        currentClock[senderIndex]++;
+
+                        logicalClock.put(clientGroupMember, currentClock);
                     }
 
                     client.deliver(received.msg());
@@ -245,6 +251,7 @@ public class StableMulticast {
             }
         }).start();
     }
+
     private synchronized void discardStableMessages() {
         List<UUID> stableMessages = new ArrayList<>();
 
@@ -253,13 +260,15 @@ public class StableMulticast {
             int senderIndex = getIndex(message.groupMember());
             int msgClockValue = message.clock()[senderIndex];
 
-            int minClockValue = Integer.MAX_VALUE;
-            // menor valor no index do sender em todos os processos
+            boolean isStable = true;
             for (int[] clock : logicalClock.values()) {
-                minClockValue = Math.min(minClockValue, clock[senderIndex]);
+                if (msgClockValue > clock[senderIndex]) {
+                    isStable = false;
+                    break;
+                }
             }
 
-            if (msgClockValue <= minClockValue) {
+            if (isStable) {
                 stableMessages.add(entry.getKey());
             }
         }
