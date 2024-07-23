@@ -179,7 +179,7 @@ public class StableMulticast {
         printBufferAndClock();
     }
 
-    private void printBufferAndClock() {
+    private synchronized void printBufferAndClock() {
         System.out.println("Buffer de Mensagens:");
         for (Map.Entry<UUID, Message> entry : messageBuffer.entrySet()) {
             System.out.println("Mensagem: " + entry.getValue().msg() +
@@ -238,7 +238,6 @@ public class StableMulticast {
                     discardStableMessages();
 
                     System.out.println("------------------ Recebeu ------------------");
-
                     printBufferAndClock();
                 }
             } catch (Exception e) {
@@ -246,24 +245,28 @@ public class StableMulticast {
             }
         }).start();
     }
+    private synchronized void discardStableMessages() {
+        List<UUID> stableMessages = new ArrayList<>();
 
-    private void discardStableMessages() {
-        synchronized (messageBuffer) {
-            Iterator<Map.Entry<UUID, Message>> iterator = messageBuffer.entrySet().iterator();
+        for (Map.Entry<UUID, Message> entry : messageBuffer.entrySet()) {
+            Message message = entry.getValue();
+            int senderIndex = getIndex(message.groupMember());
+            int msgClockValue = message.clock()[senderIndex];
 
-            while (iterator.hasNext()) {
-                Map.Entry<UUID, Message> entry = iterator.next();
-                Message message = entry.getValue();
-                int senderIndex = getIndex(message.groupMember());
-
-                for (int[] clock : logicalClock.values()) {
-                    if (message.clock()[senderIndex] > clock[senderIndex]) {
-                        iterator.remove();
-                        System.out.println("MIDDLEWARE: Discarded stable message: " + message.msg());
-                        break;  // Exit the loop since the message has been discarded
-                    }
-                }
+            int minClockValue = Integer.MAX_VALUE;
+            // menor valor no index do sender em todos os processos
+            for (int[] clock : logicalClock.values()) {
+                minClockValue = Math.min(minClockValue, clock[senderIndex]);
             }
+
+            if (msgClockValue <= minClockValue) {
+                stableMessages.add(entry.getKey());
+            }
+        }
+
+        for (UUID key : stableMessages) {
+            messageBuffer.remove(key);
+            System.out.println("MIDDLEWARE: Discarded stable message: " + key);
         }
     }
 
