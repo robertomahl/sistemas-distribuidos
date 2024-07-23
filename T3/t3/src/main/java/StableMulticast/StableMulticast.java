@@ -1,8 +1,25 @@
 package StableMulticast;
 
-import java.io.*;
-import java.net.*;
-import java.util.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.MulticastSocket;
+import java.net.NetworkInterface;
+import java.net.SocketAddress;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
 public class StableMulticast {
@@ -10,9 +27,8 @@ public class StableMulticast {
     private final GroupMember clientGroupMember;
     private final IStableMulticast client;
     private final List<GroupMember> groupMembers;
-    private final Map<Message, Message> messageBuffer;
-    private final Map<String, int[]> logicalClock;
-    private final Map<Message, List<Integer>> delayedMessages;
+    private final Map<GroupMember, int[]> logicalClock;
+    private final Map<UUID, Message> messageBuffer;
 
     public static final String MULTICAST_IP = "224.0.0.1";
     public static final Integer MULTICAST_PORT = 4446;
@@ -32,14 +48,12 @@ public class StableMulticast {
         this.groupMembers = new ArrayList<>();
         this.messageBuffer = new HashMap<>();
         this.logicalClock = new HashMap<>();
-        this.delayedMessages = new HashMap<>();
 
         groupMembers.add(clientGroupMember);
 
         discoverGroupMembers();
         announcePresence();
         mreceive();
-        //monitorUserInput();
     }
 
     private void discoverGroupMembers() {
@@ -105,56 +119,47 @@ public class StableMulticast {
         }
 
         final var senderAndMsg = clientGroupMember.toString() + ": " + msg;
+        final var myClock = logicalClock.getOrDefault(clientGroupMember, new int[groupMembers.size()]);
 
-        int[] myClock = logicalClock.getOrDefault(clientGroupMember.ip(), new int[groupMembers.size()]);
-        myClock[getIndex(clientGroupMember)]++;
-        logicalClock.put(clientGroupMember.ip(), myClock);
-
-        // Clone the clock to ensure uniqueness
         final var message = new Message(senderAndMsg, myClock.clone(), clientGroupMember);
 
         Scanner in = new Scanner(System.in);
 
         System.out.println("Enviar a todos? (y/n)");
-        Boolean shouldSendToAll = in.nextLine().equals("y");
+        boolean shouldSendToAll = in.nextLine().equals("y");
 
         if (!shouldSendToAll) {
-            System.out.println("Escolha os membros para enviar a mensagem (digite o número correspondente, separados por vírgula):");
-            for (int i = 0; i < groupMembers.size(); i++) {
-                GroupMember member = groupMembers.get(i);
-                System.out.println((i + 1) + ": " + member.ip() + ":" + member.port());
-            }
 
-            String[] selectedIndices = in.nextLine().split(",");
-            List<Integer> selectedMembers = new ArrayList<>();
-            for (String index : selectedIndices) {
-                try {
-                    int memberIndex = Integer.parseInt(index.trim()) - 1;
-                    if (memberIndex >= 0 && memberIndex < groupMembers.size()) {
-                        selectedMembers.add(memberIndex);
-                    } else {
-                        System.out.println("Índice inválido: " + (memberIndex + 1));
-                    }
-                } catch (NumberFormatException e) {
-                    System.out.println("Formato de índice inválido: " + index);
-                }
-            }
-            System.out.println("Enviar agora? (y/n)");
-            Boolean sendNow = in.nextLine().equals("y");
+            List<GroupMember> notYetSentMembers = new ArrayList<>(this.groupMembers);
+            while (!notYetSentMembers.isEmpty()) {
 
-            if (sendNow) {
-                for (int index : selectedMembers) {
-                    GroupMember member = groupMembers.get(index);
-                    try (DatagramSocket socket = new DatagramSocket()) {
-                        sendDatagram(socket, message, InetAddress.getByName(member.ip()), member.port());
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+                System.out.println("Escolha um membro para enviar a mensagem agora:");
+                for (int i = 0; i < notYetSentMembers.size(); i++) {
+                    GroupMember member = notYetSentMembers.get(i);
+                    System.out.println((i) + ": " + member.ip() + ":" + member.port());
                 }
-            } else {
-                delayedMessages.put(message, selectedMembers);
-                messageBuffer.put(message, message);
-                System.out.println("MIDDLEWARE: Mensagem armazenada para envio posterior");
+
+                int selectedIndex;
+                while (true) {
+                    try {
+                        selectedIndex = Integer.parseInt(in.nextLine().trim());
+                        if (selectedIndex >= 0 && selectedIndex < notYetSentMembers.size()) {
+                            break;
+                        }
+                    } catch (NumberFormatException e) {
+                        System.out.println("Formato de índice inválido");
+                    }
+                    System.out.println("Índice inválido");
+                }
+
+                GroupMember member = notYetSentMembers.get(selectedIndex);
+                try (DatagramSocket socket = new DatagramSocket()) {
+                    sendDatagram(socket, message, InetAddress.getByName(member.ip()), member.port());
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+
+                notYetSentMembers.remove(selectedIndex);
             }
 
         } else {
@@ -167,20 +172,23 @@ public class StableMulticast {
             }
         }
 
+        myClock[getIndex(clientGroupMember)]++;
+        logicalClock.put(clientGroupMember, myClock);
+
+        System.out.println("------------------ Enviou ------------------");
         printBufferAndClock();
-        monitorDelayMessages();
     }
 
     private void printBufferAndClock() {
         System.out.println("Buffer de Mensagens:");
-        for (Map.Entry<Message, Message> entry : messageBuffer.entrySet()) {
+        for (Map.Entry<UUID, Message> entry : messageBuffer.entrySet()) {
             System.out.println("Mensagem: " + entry.getValue().msg() +
                     " | Relógio: " + Arrays.toString(entry.getValue().clock()));
         }
 
         System.out.println("\nRelógio Lógico dos Processos:");
-        for (Map.Entry<String, int[]> entry : logicalClock.entrySet()) {
-            System.out.println("IP: " + entry.getKey() + " | Relógio: " + Arrays.toString(entry.getValue()));
+        for (Map.Entry<GroupMember, int[]> entry : logicalClock.entrySet()) {
+            System.out.println("Membro: " + entry.getKey() + " | Relógio: " + Arrays.toString(entry.getValue()));
         }
     }
 
@@ -215,30 +223,23 @@ public class StableMulticast {
                         received = (Message) ois.readObject();
                     }
 
-                    // Update messageBuffer and logicalClock
-                    messageBuffer.put(received, received);
-                    logicalClock.put(received.groupMember().ip(), received.clock());
+                    messageBuffer.put(UUID.randomUUID(), received);
 
                     if (!received.groupMember().equals(clientGroupMember)) {
-                        int[] myClock = logicalClock.getOrDefault(clientGroupMember.ip(), new int[groupMembers.size()]);
+                        logicalClock.put(received.groupMember(), received.clock());
+                        int[] myClock = logicalClock.getOrDefault(clientGroupMember, new int[groupMembers.size()]);
                         int senderIndex = getIndex(received.groupMember());
                         myClock[senderIndex]++;
-                        logicalClock.put(clientGroupMember.ip(), myClock);
+                        logicalClock.put(clientGroupMember, myClock);
                     }
 
-                    // Sort messages by logical clock
-                    List<Map.Entry<Message, Message>> sortedMessages = new ArrayList<>(messageBuffer.entrySet());
-                    sortedMessages.sort((entry1, entry2) -> {
-                        Message msg1 = entry1.getValue();
-                        Message msg2 = entry2.getValue();
-                        return compareLogicalClocks(msg1.clock(), msg2.clock());
-                    });
-
-                    for (Map.Entry<Message, Message> entry : sortedMessages) {
-                        client.deliver(entry.getValue().msg());
-                    }
+                    client.deliver(received.msg());
 
                     discardStableMessages();
+
+                    System.out.println("------------------ Recebeu ------------------");
+
+                    printBufferAndClock();
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -246,43 +247,24 @@ public class StableMulticast {
         }).start();
     }
 
-    private int compareLogicalClocks(int[] clock1, int[] clock2) {
-        for (int i = 0; i < clock1.length; i++) {
-            if (clock1[i] < clock2[i]) {
-                return -1;
-            } else if (clock1[i] > clock2[i]) {
-                return 1;
-            }
-        }
-        return 0;
-    }
-
     private void discardStableMessages() {
-        List<Message> stableMessages = new ArrayList<>();
+        synchronized (messageBuffer) {
+            Iterator<Map.Entry<UUID, Message>> iterator = messageBuffer.entrySet().iterator();
 
-        for (Map.Entry<Message, Message> entry : messageBuffer.entrySet()) {
-            Message message = entry.getValue();
+            while (iterator.hasNext()) {
+                Map.Entry<UUID, Message> entry = iterator.next();
+                Message message = entry.getValue();
+                int senderIndex = getIndex(message.groupMember());
 
-            int senderIndex = getIndex(message.groupMember());
-
-            boolean stable = true;
-            for (int[] clock : logicalClock.values()) {
-                if (message.clock()[senderIndex] > clock[senderIndex]) {
-                    stable = false;
-                    break;
+                for (int[] clock : logicalClock.values()) {
+                    if (message.clock()[senderIndex] > clock[senderIndex]) {
+                        iterator.remove();
+                        System.out.println("MIDDLEWARE: Discarded stable message: " + message.msg());
+                        break;  // Exit the loop since the message has been discarded
+                    }
                 }
             }
-
-            if (stable) {
-                stableMessages.add(entry.getKey());
-            }
         }
-
-        for (Message key : stableMessages) {
-            messageBuffer.remove(key);
-            System.out.println("MIDDLEWARE: Discarded stable message: " + key.msg());
-        }
-        monitorDelayMessages();
     }
 
     private int getIndex(GroupMember member) {
@@ -292,39 +274,4 @@ public class StableMulticast {
         }
         return index;
     }
-
-    private void sendToRecipients(Message message, List<Integer> selectedMembers) {
-        for (int index : selectedMembers) {
-            GroupMember member = groupMembers.get(index);
-            try (DatagramSocket socket = new DatagramSocket()) {
-                sendDatagram(socket, message, InetAddress.getByName(member.ip()), member.port());
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    private void sendDelayedMessages() {
-        for (Map.Entry<Message, List<Integer>> entry : delayedMessages.entrySet()) {
-            sendToRecipients(entry.getKey(), entry.getValue());
-        }
-        delayedMessages.clear();
-        messageBuffer.clear();
-        System.out.println("MIDDLEWARE: Todas as mensagens atrasadas foram enviadas.");
-    }
-
-    private void monitorDelayMessages() {
-        //@TODO para enviar novas mensagens a pessoa nao poderia ter mensagens no buffer?
-        //@TODO ver se para mostrar a mensagem o buffer tem q ter algo
-        System.out.println("Deseja enviar mensagens atrasadas?y/n");
-        Scanner in = new Scanner(System.in);
-        Boolean sendMessages = in.nextLine().equals("y");
-        if(sendMessages){
-            sendDelayedMessages();
-        }
-    }
 }
-
-//@TODO ver como ta o funcionamento do relogio e a ordenacao dele
-//@TODO ver se todas as funcoes que verificam o ordenamento do relogio realmente precisam - pode ter coisa inultil
-//@TODO falaram q soh precisava do relogio para ir descartando as mensagens do buffer - ver como isso ta sendo feito
