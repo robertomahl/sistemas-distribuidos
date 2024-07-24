@@ -15,7 +15,6 @@ import java.net.SocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
@@ -226,17 +225,11 @@ public class StableMulticast {
                     messageBuffer.put(UUID.randomUUID(), received);
 
                     if (!received.groupMember().equals(clientGroupMember)) {
-                        int[] receivedClock = received.clock();
-                        int[] currentClock = logicalClock.getOrDefault(clientGroupMember, new int[groupMembers.size()]);
+                        logicalClock.put(received.groupMember(), received.clock());
+                        int[] myClock = logicalClock.getOrDefault(clientGroupMember, new int[groupMembers.size()]);
                         int senderIndex = getIndex(received.groupMember());
-
-                        // Pega o maior entre o atual e o recebido
-                        for (int i = 0; i < currentClock.length; i++) {
-                            currentClock[i] = Math.max(currentClock[i], receivedClock[i]);
-                        }
-                        currentClock[senderIndex]++;
-
-                        logicalClock.put(clientGroupMember, currentClock);
+                        myClock[senderIndex]++;
+                        logicalClock.put(clientGroupMember, myClock);
                     }
 
                     client.deliver(received.msg());
@@ -260,15 +253,13 @@ public class StableMulticast {
             int senderIndex = getIndex(message.groupMember());
             int msgClockValue = message.clock()[senderIndex];
 
-            boolean isStable = true;
+            int minClockValue = Integer.MAX_VALUE;
+            // menor valor no index do sender em todos os processos
             for (int[] clock : logicalClock.values()) {
-                if (msgClockValue > clock[senderIndex]) {
-                    isStable = false;
-                    break;
-                }
+                minClockValue = Math.min(minClockValue, clock[senderIndex]);
             }
 
-            if (isStable) {
+            if (msgClockValue <= minClockValue) {
                 stableMessages.add(entry.getKey());
             }
         }
